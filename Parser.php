@@ -19,6 +19,7 @@ class Parser
             if (!$html_content) {
                 continue;
             }
+            $html_content = str_replace('&#160;', '', $html_content);
             if (!preg_match('#id="page([0-9]+)-div"#', $html_content, $matches)) {
                 throw new Exception("找不到頁數");
             }
@@ -108,12 +109,19 @@ class Parser
                         $black[] = $x;
                     }
                 }
+
+                // 如果最右邊一條線距離右邊太近，表示可能是縣市格式，把最左右邊線拿掉
+                if (imagesx($gd) - $black[count($black) - 1] < 100) {
+                    $black = array_slice($black, 1, count($black) - 2);
+                }
             }
 
             // 先一行一行抓到名稱與編號為止
+            $header = '';
             while (count($line_boxes)) {
                 $line_box = array_shift($line_boxes);
                 $line = $line_box['content'];
+                $header .= $line;
                 if (strpos($line, '名稱及編號') !== false) {
                     break;
                 }
@@ -147,9 +155,13 @@ class Parser
                     $rows[$black_index] = str_replace('　', '', $text);
                 }
                 if (!array_key_exists($type, $type_lines)) {
-                    $type_lines[$type] = [];
+                    $type_lines[$type] = [
+                        'type' => $type,
+                        'header' => $header,
+                        'rows' => [],
+                    ];
                 }
-                $type_lines[$type][] = $rows;
+                $type_lines[$type]['rows'][] = $rows;
             }
         }
         return $type_lines;
@@ -180,7 +192,7 @@ class Parser
             $no = null;
             $values = null;
             $prev_values = [];
-            while ($row = array_shift($type_line)) {
+            while ($row = array_shift($type_line['rows'])) {
                 if ($row[4] == '合計') {
                     $values = [
                         '款名' => '合計',
@@ -192,13 +204,20 @@ class Parser
                     continue;
                 }
 
-                // 如果只有第 4 個欄位有值，表示現在是編號
+                // 如果只有第 4 個欄位有值，表示現在是編號，或者是多行的名稱
                 if ($row[4] != '') {
                     $clone_row = $row;
                     $clone_row[4] = '';
                     if (implode('', $clone_row) == '') {
-                        if (!preg_match('#^\d+$#', $row[4])) {
-                            throw new Exception("編號不是數字: " . $row[4]);
+                        $row[4] = trim($row[4]);
+                        if (!preg_match('#^[0-9a-z]+$#', $row[4])) {
+                            foreach (['節', '目', '項', '款'] as $c) {
+                                if ($values[$c] != '') {
+                                    break;
+                                }
+                            }
+                            $values[$c . '名'] .= $row[4];
+                            continue;
                         }
                         if (!is_null($values)) {
                             $prev_values = $values;
@@ -217,6 +236,26 @@ class Parser
                             '說明' => '',
                         ];
                         continue;
+                    }
+                    // 如果是地方政府的話，第四欄會是 數字名稱接在一起
+                    if (preg_match('#^([0-9a-z]+)(.+)$#', $row[4], $matches)) {
+                        if (!is_null($values)) {
+                            $prev_values = $values;
+                            $callback($type, self::outputData($cols[$type], $values));
+                        }
+                        $values = [
+                            '編號' => $matches[1],
+                            '說明' => '',
+                            '款' => $prev_values['款'] ?? '',
+                            '款名' => $prev_values['款名'] ?? '',
+                            '項' => $prev_values['項'] ?? '',
+                            '項名' => $prev_values['項名'] ?? '',
+                            '目' => $prev_values['目'] ?? '',
+                            '目名' => $prev_values['目名'] ?? '',
+                            '節' => $prev_values['節'] ?? '',
+                            '節名' => $prev_values['節名'] ?? '',
+                        ];
+                        $row[4] = $matches[2];
                     }
                 }
 
@@ -256,17 +295,31 @@ class Parser
                     $row[3] = $row[4] = '';
                 }
 
-                if ($row[5] != '' and $row[6] != '' and $row[7] != '' and $row[8] != '') {
-                    $values['本年度預算數'] = str_replace(',', '', $row[5]);
-                    $values['上年度預算數'] = str_replace(',', '', $row[6]);
-                    $values['前年度決算數'] = str_replace(',', '', $row[7]);
-                    $values['本年度與上年度比較'] = str_replace(',', '', $row[8]);
-                    $row[5] = $row[6] = $row[7] = $row[8] = '';
-                }
+                if (strpos($type_line['header'], '前年度') !== false) {
+                    if ($row[5] != '' and $row[6] != '' and $row[7] != '' and $row[8] != '') {
+                        $values['本年度預算數'] = str_replace(',', '', $row[5]);
+                        $values['上年度預算數'] = str_replace(',', '', $row[6]);
+                        $values['前年度決算數'] = str_replace(',', '', $row[7]);
+                        $values['本年度與上年度比較'] = str_replace(',', '', $row[8]);
+                        $row[5] = $row[6] = $row[7] = $row[8] = '';
+                    }
 
-                if ($row[9] ?? false and $row[9] != '') {
-                    $values['說明'] .= $row[9];
-                    $row[9] = '';
+                    if ($row[9] ?? false and $row[9] != '') {
+                        $values['說明'] .= $row[9];
+                        $row[9] = '';
+                    }
+                } else {
+                    if ($row[5] != '' or $row[6] != '' or $row[7] != '') {
+                        $values['本年度預算數'] = str_replace(',', '', $row[5]);
+                        $values['上年度預算數'] = str_replace(',', '', $row[6]);
+                        $values['本年度與上年度比較'] = str_replace(',', '', $row[7]);
+                        $row[5] = $row[6] = $row[7] = '';
+                    }
+
+                    if ($row[8] ?? false and $row[8] != '') {
+                        $values['說明'] .= $row[8];
+                        $row[8] = '';
+                    }
                 }
 
                 // 如果只剩下 row[4] 有值，有可能是沒有款項目節的資料
@@ -286,8 +339,9 @@ class Parser
                     continue;
                 }
 
+                print_r($values);
                 echo "current = " . json_encode($row, JSON_UNESCAPED_UNICODE) . "\n";
-                echo json_encode(array_slice($type_line, 0, 5), JSON_UNESCAPED_UNICODE) . "\n";
+                echo json_encode(array_slice($type_line['rows'], 0, 5), JSON_UNESCAPED_UNICODE) . "\n";
                 exit;
             }
         }
