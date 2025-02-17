@@ -19,7 +19,6 @@ class Parser
             if (!$html_content) {
                 continue;
             }
-            $html_content = str_replace('&#160;', '', $html_content);
             if (!preg_match('#id="page([0-9]+)-div"#', $html_content, $matches)) {
                 throw new Exception("找不到頁數");
             }
@@ -82,6 +81,7 @@ class Parser
                 '歲入來源別預算表',
                 '歲出政事別預算表',
                 '歲出機關別預算表',
+                '各項費用彙計表',
             ];
             $type = null;
             foreach ($types as $t) {
@@ -117,13 +117,24 @@ class Parser
             }
 
             // 先一行一行抓到名稱與編號為止
-            $header = '';
+            $header_text = '';
+            $header_boxes = [];
             while (count($line_boxes)) {
                 $line_box = array_shift($line_boxes);
                 $line = $line_box['content'];
-                $header .= $line;
-                if (strpos($line, '名稱及編號') !== false) {
-                    break;
+                $header_text .= $line;
+                $header_boxes[] = $line;
+                
+                if (in_array($type, ['各項費用彙計表'])) {
+                    // 如果是各項費用彙計表，就處理到單位之後
+                    if (strpos($line, '單位：') !== false) {
+                        break;
+                    }
+                } else {
+                    // 其他的話，就處理到名稱及編號為止
+                    if (strpos($line, '名稱及編號') !== false) {
+                        break;
+                    }
                 }
             }
             if (!$line_box) {
@@ -154,14 +165,26 @@ class Parser
                     }
                     $rows[$black_index] = str_replace('　', '', $text);
                 }
+                // 抓取單位名稱
+                $organization = null;
+                foreach ($header_boxes as $idx => $header_box) {
+                    if (strpos($header_box, $type) === 0) {
+                        $organization = $header_boxes[$idx - 1];
+                        break;
+                    }
+                }
+
                 if (!array_key_exists($type, $type_lines)) {
                     $type_lines[$type] = [
                         'type' => $type,
-                        'header' => $header,
+                        'header_text' => $header_text,
+                        'header_boxes' => $header_boxes,
+                        'organizations' => [],
                         'rows' => [],
                     ];
                 }
                 $type_lines[$type]['rows'][] = $rows;
+                $type_lines[$type]['organizations'][] = $organization;
             }
         }
         return $type_lines;
@@ -172,6 +195,124 @@ class Parser
         return array_combine($cols, array_map(function($c) use ($values){
             return $values[$c] ?? '';
         }, $cols));
+    }
+
+    public static function parse各項費用彙計表($type_line, $callback)
+    {
+        $cols = [
+            '單位',
+            '工作計畫編號',
+            '工作計畫名稱',
+            '第一級用途別科目編號',
+            '第一級用途別科目名稱',
+            '第二級用途別科目編號',
+            '第二級用途別科目名稱',
+            '費用',
+        ];
+        $project_list = null; // 工作計畫名稱及編號
+        $parent_id_no = null; // 第一級用途別科目名稱及編號
+        while ($row = array_shift($type_line['rows'])) {
+            $organization = array_shift($type_line['organizations']);
+            // 處理第一行 工作計畫名稱及編號
+            if ($row[0] == '工作計畫名稱及編號') {
+                $project_list = [];
+                // 處理空格
+                if (preg_match('#^([0-9\xa0]+)$#u', $row[1], $matches)) {
+                    $ids = preg_split('#\xa0#u', $matches[1]);
+                    $row[1] = '';
+                    foreach ($ids as $idx => $id) {
+                        if ($row[1 + $idx]) {
+                            print_r($row);
+                            throw new Exception("工作計畫名稱及編號有問題");
+                        }
+                        $row[1 + $idx] = $id;
+                    }
+                }
+
+                for ($i = 1; $row[$i] ?? false; $i ++) {
+                    $project_list[] = [
+                        '工作計畫編號' => $row[$i],
+                        '工作計畫名稱' => '',
+                    ];
+                }
+
+                // 處理下一行名稱
+                $row = array_shift($type_line['rows']);
+                $organization = array_shift($type_line['organizations']);
+                for ($i = 1; $row[$i] ?? false; $i ++) {
+                    $project_list[$i - 1]['工作計畫名稱'] = $row[$i];
+                }
+                if ($type_line['rows'][0][0] == '第一、二級用途別科目名稱及編號') {
+                    array_shift($type_line['rows']);
+                    array_shift($type_line['organizations']);
+                }
+
+                // 如果後面還有文字，表示字太多要追加
+                while ($type_line['rows'][0][0] == '') {
+                    $row = array_shift($type_line['rows']);
+                    $organization = array_shift($type_line['organizations']);
+                    for ($i = 1; $row[$i] ?? false; $i ++) {
+                        $project_list[$i - 1]['工作計畫名稱'] .= $row[$i];
+                    }
+                }
+                continue;
+            }
+
+            // 處理合計
+            if (preg_replace('#[\xa0\s]#u', '', $row[0]) == '合計') {
+                for ($i = 1; $i < count($project_list); $i ++) {
+                    $values = [
+                        '單位' => $organization,
+                        '工作計畫編號' => $project_list[$i]['工作計畫編號'],
+                        '工作計畫名稱' => $project_list[$i]['工作計畫名稱'],
+                        '第一級用途別科目編號' => '',
+                        '第一級用途別科目名稱' => '合計',
+                        '第二級用途別科目編號' => '',
+                        '第二級用途別科目名稱' => '',
+                        '費用' => str_replace(',', '', $row[$i]),
+                    ];
+                    $callback('各項費用彙計表', self::outputData($cols, $values));
+                }
+                continue;
+            }
+
+            // 處理數字
+            if (preg_match('#^\xa0*(\d+)\s*(.*)$#u', $row[0], $matches)) {
+                $no = $matches[1];
+                $name = $matches[2];
+
+                // 處理如果欄位名跟資料被拆成兩行的情況
+                if ('' == implode('', array_slice($row, 1)) and $type_line['rows'][0][0] == '') {
+                    $row = array_shift($type_line['rows']);
+                    $organization = array_shift($type_line['organizations']);
+                }
+
+                if ($no % 1000 == 0) {
+                    $parent_id_no = [$no, $name, '', ''];
+                } else {
+                    $parent_id_no[2] = $no;
+                    $parent_id_no[3] = $name;
+                }
+
+                for ($i = 1; $row[$i] ?? false; $i ++) {
+                    $values = [
+                        '單位' => $organization,
+                        '工作計畫編號' => $project_list[$i - 1]['工作計畫編號'] ?? '',
+                        '工作計畫名稱' => $project_list[$i - 1]['工作計畫名稱'] ?? '合計',
+                        '第一級用途別科目編號' => $parent_id_no[0],
+                        '第一級用途別科目名稱' => $parent_id_no[1],
+                        '第二級用途別科目編號' => $parent_id_no[2],
+                        '第二級用途別科目名稱' => $parent_id_no[3],
+                        '費用' => str_replace(',', '', $row[$i]),
+                    ];
+                    $callback('各項費用彙計表', self::outputData($cols, $values));
+                }
+                continue;
+            }
+            print_r($row);
+            print_r($type_line['rows']);
+            exit;
+        }
     }
 
     public static function parseData($type_lines, $callback)
@@ -189,10 +330,14 @@ class Parser
         ];
 
         foreach ($type_lines as $type => $type_line) {
+            if ($type == '各項費用彙計表') {
+                return self::parse各項費用彙計表($type_line, $callback);
+            }
             $no = null;
             $values = null;
             $prev_values = [];
             while ($row = array_shift($type_line['rows'])) {
+                $organization = array_shift($type_line['organizations']);
                 if ($row[4] == '合計') {
                     $values = [
                         '款名' => '合計',
@@ -295,7 +440,7 @@ class Parser
                     $row[3] = $row[4] = '';
                 }
 
-                if (strpos($type_line['header'], '前年度') !== false) {
+                if (strpos($type_line['header_text'], '前年度') !== false) {
                     if ($row[5] != '' and $row[6] != '' and $row[7] != '' and $row[8] != '') {
                         $values['本年度預算數'] = str_replace(',', '', $row[5]);
                         $values['上年度預算數'] = str_replace(',', '', $row[6]);
