@@ -281,10 +281,38 @@ class Parser
                 $no = $matches[1];
                 $name = $matches[2];
 
-                // 處理如果欄位名跟資料被拆成兩行的情況
-                if ('' == implode('', array_slice($row, 1)) and $type_line['rows'][0][0] == '') {
-                    $row = array_shift($type_line['rows']);
-                    $organization = array_shift($type_line['organizations']);
+                while (true) {
+                    // 處理名稱被擠到下一行
+                    if (count($type_line['rows']) and preg_match('#^[^0-9]+#', $type_line['rows'][0][0]) and implode('', array_slice($type_line['rows'][0], 1)) == '') {
+                        $row2 = array_shift($type_line['rows']);
+                        $organization = array_shift($type_line['organizations']);
+                        $name .= $row2[0];
+                        continue;
+                    }
+
+                    // 處理如果欄位名跟資料被拆成兩行的情況
+                    if ('' == implode('', array_slice($row, 1)) and $type_line['rows'][0][0] == '') {
+                        $row = array_shift($type_line['rows']);
+                        $organization = array_shift($type_line['organizations']);
+                        continue;
+                    }
+
+                    // 跳過只有第一個欄位是「第一、二級用途別科目名稱及編號」的行
+                    if (count($type_line['rows']) and '第一、二級用途別科目名稱及編號' == $type_line['rows'][0][0] and implode('', array_slice($type_line['rows'][0], 1)) == '') {
+                        array_shift($type_line['rows']);
+                        array_shift($type_line['organizations']);
+                        continue;
+                    }
+
+                    // 如果現在這行沒數字，但是下行只有數字，把下行數字接過來
+                    if (implode('', array_slice($row, 1)) == '' and count($type_line['rows']) and $type_line['rows'][0][0] == '' and preg_match('#^[0-9-]+$#', implode('', $type_line['rows'][0]))) {
+                        $row = array_merge([$row[0]], array_slice($type_line['rows'][0], 1));
+                        array_shift($type_line['rows']);
+                        array_shift($type_line['organizations']);
+                        continue;
+                    }
+
+                    break;
                 }
 
                 if ($no % 1000 == 0) {
