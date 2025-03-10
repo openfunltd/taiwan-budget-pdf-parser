@@ -37,6 +37,8 @@ foreach (glob(__DIR__ . "/list/*.csv") as $csv_file) {
             $units[$unit_id]->files->{$type}[] = (object)[
                 'year' => $year,
                 'url' => $v,
+                'has_html' => file_exists(__DIR__ . "/html/{$type}-{$unit_id}-{$year}"),
+                'has_txt' => file_exists(__DIR__ . "/txt/{$type}-{$unit_id}-{$year}.txt"),
             ];
         }
     }
@@ -83,16 +85,24 @@ $units = array_values($units);
     <div id="list" class="col-3">
     <ul>
         <?php foreach ($units as $unit) { ?>
-        <li class="unit-li" data-unit="<?= $unit->{'機關編號'} ?>"><?= $unit->{'機關名稱'} ?>
+        <li class="unit-li <?= ($_GET['unit_id'] ?? false) == $unit->{'機關編號'} ? 'jstree-open': '' ?>" data-unit="<?= $unit->{'機關編號'} ?>">
+        <?= $unit->{'機關編號'} ?>.
+        <?= $unit->{'機關名稱'} ?>
             <ul>
                 <?php foreach ($unit->files as $type => $files) { ?>
-                <li class="type-li" data-type="<?= $type ?>"><?= $type ?>(<?= count($files) ?>)
+                <li class="type-li <?= ($_GET['type'] ?? false) == $type ? 'jstree-open' : '' ?>" data-type="<?= $type ?>"><?= $type ?>(<?= count($files) ?>)
                     <ul>
                         <?php foreach ($files as $file) { ?>
-                        <li class="year-li" data-year="<?= $file->year ?>"><?= $file->year ?>年
+                        <li class="year-li <?= ($_GET['year'] ?? false) == $file->year ? 'jstree-open' : '' ?>" data-year="<?= $file->year ?>"><?= $file->year ?>年
                         <ul>
                             <li><a href="<?= htmlspecialchars($file->url) ?>" target="_blank">原始</a></li>
                             <li><a href="#" class="btn-pdf">PDF</a></li>
+                            <?php if ($file->has_html) { ?>
+                            <li><a href="#" class="btn-html">HTML</a></li>
+                            <?php } ?>
+                            <?php if ($file->has_txt) { ?>
+                            <li><a href="#" class="btn-txt">TXT</a></li>
+                            <?php } ?>
                             <?php foreach ($unit->csvs->{$type}->{$file->year} as $csv_type) { ?>
                             <li><a href="#" class="btn-csv" data-csvtype="<?= htmlspecialchars($csv_type) ?>"><?= htmlspecialchars($csv_type) ?>.csv</a></li>
                             <?php } ?>
@@ -121,6 +131,8 @@ $('#list').on('click', 'a.btn-pdf', function(e) {
     var pdf_path = "/pdf/" + type + "-" + unit_id + "-" + year + ".pdf";
     // iframe in #content
     $('#content').html('<iframe src="' + pdf_path + '" style="width: 100%; height: 100%;"></iframe>');
+    // pushState to history, add ?unit_id=xxx&year=xxx&type=xxx&format=pdf
+    history.pushState(null, null, '?unit_id=' + unit_id + '&year=' + year + '&type=' + type + '&format=pdf');
 });
 $('#list').on('click', 'a.btn-csv', function(e) {
     e.preventDefault();
@@ -133,6 +145,19 @@ $('#list').on('click', 'a.btn-csv', function(e) {
     $.get(csv_path, function(data) {
         $('#content').html('<pre>' + data + '</pre>');
     }, 'text');
+    // pushState to history, add ?unit_id=xxx&year=xxx&type=xxx&format=csv&csv_type=xxx
+    history.pushState(null, null, '?unit_id=' + unit_id + '&year=' + year + '&type=' + type + '&format=csv&csv_type=' + csv_type);
+});
+$('#list').on('click', 'a.btn-html', function(e) {
+    e.preventDefault();
+    var unit_id = $(this).closest('li.unit-li').data('unit');
+    var year = $(this).closest('li.year-li').data('year');
+    var type = $(this).closest('li.type-li').data('type');
+    var html_path = "/html/" + type + "-" + unit_id + "-" + year + '/html-html.html';
+    // iframe in #content
+    $('#content').html('<iframe src="' + html_path + '" style="width: 100%; height: 100%;"></iframe>');
+    // pushState to history, add ?unit_id=xxx&year=xxx&type=xxx&format=html
+    history.pushState(null, null, '?unit_id=' + unit_id + '&year=' + year + '&type=' + type + '&format=html');
 });
 </script>
 </body>
