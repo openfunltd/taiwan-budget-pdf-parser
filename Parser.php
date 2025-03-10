@@ -2,13 +2,9 @@
 
 class Parser
 {
-    public static function toHTML($pdffile)
+    public static function toHTML($pdffile, $target = null)
     {
-        if (file_exists(__DIR__ . "/tmp")) {
-            system("rm -rf " . escapeshellarg(__DIR__ . "/tmp"));
-        }
-        mkdir(__DIR__ . "/tmp");
-        system("pdftohtml -c -s " . escapeshellarg($pdffile) . " " . escapeshellarg(__DIR__ . "/tmp/tmp"));
+        system("pdftohtml -c -s " . escapeshellarg($pdffile) . " " . escapeshellarg($target));
     }
 
     public static function parseHTML($file)
@@ -23,7 +19,7 @@ class Parser
                 throw new Exception("找不到頁數");
             }
             $page = $matches[1];
-            error_log("Page: $page");
+            //error_log("Page: $page");
             $doc = new DOMDocument();
             @$doc->loadHTML($html_content);
             $boxes = [];
@@ -60,7 +56,7 @@ class Parser
             ];
             $top = null;
             foreach ($boxes as $box) {
-                if ($top !== null && $top + 3 < $box['top']) {
+                if ($top !== null && $top + 5 < $box['top']) {
                     $content .= "\n";
                     $line_boxes[] = $line_box;
                     $line_box = [
@@ -97,7 +93,7 @@ class Parser
             $backgroup_image = null;
             if (preg_match('#<img .* src="([^"]+)" alt="background image"#', $html_content, $matches)) {
                 $backgroup_image = $matches[1];
-                $gd = imagecreatefrompng(__DIR__ . "/tmp/" . basename($backgroup_image));
+                $gd = imagecreatefrompng(dirname($file) . "/" . $backgroup_image);
                 // 檢查圖片中 top=300 中，從左到右有哪些 pixel 是有黑色的點
                 $black = [];
                 for ($x = 0; $x < imagesx($gd); $x++) {
@@ -144,6 +140,7 @@ class Parser
             if (!preg_match('#^\d+$#', $line_boxes[count($line_boxes) - 1]['content'])) {
                 print_r($line_boxes[count($line_boxes) - 1]);
                 print_r($page);
+                continue;
                 throw new Exception("頁碼不符");
             }
             array_pop($line_boxes);
@@ -163,7 +160,8 @@ class Parser
                     if ($black_index === null) {
                         $black_index = count($black);
                     }
-                    $rows[$black_index] = str_replace('　', '', $text);
+                    $rows[$black_index] = $rows[$black_index] ?? '';
+                    $rows[$black_index] .= str_replace('　', '', $text);
                 }
                 // 抓取單位名稱
                 $organization = null;
@@ -181,6 +179,7 @@ class Parser
                         'header_boxes' => $header_boxes,
                         'organizations' => [],
                         'rows' => [],
+                        'page' => $page,
                     ];
                 }
                 $type_lines[$type]['rows'][] = $rows;
@@ -195,6 +194,13 @@ class Parser
         return array_combine($cols, array_map(function($c) use ($values){
             return $values[$c] ?? '';
         }, $cols));
+    }
+    public static function clean_space($s)
+    {
+        $s = str_replace(' ', '', $s);
+        $s = str_replace('　', '', $s);
+        $s = str_replace(" ", '', $s);
+        return $s;
     }
 
     public static function parse各項費用彙計表($type_line, $callback)
@@ -213,6 +219,11 @@ class Parser
         $parent_id_no = null; // 第一級用途別科目名稱及編號
         while ($row = array_shift($type_line['rows'])) {
             $organization = array_shift($type_line['organizations']);
+
+            // 處理全空白
+            if (self::clean_space(implode('', $row)) == '') {
+                continue;
+            }
             // 處理第一行 工作計畫名稱及編號
             if ($row[0] == '工作計畫名稱及編號') {
                 $project_list = [];
@@ -271,7 +282,7 @@ class Parser
                         '第二級用途別科目名稱' => '',
                         '費用' => str_replace(',', '', $row[$i]),
                     ];
-                    $callback('各項費用彙計表', self::outputData($cols, $values));
+                    $callback('各項費用彙計表', self::outputData($cols, $values), $type_line['page']);
                 }
                 continue;
             }
@@ -315,7 +326,7 @@ class Parser
                     break;
                 }
 
-                if ($no % 1000 == 0) {
+                if ($no % 100 == 0) {
                     $parent_id_no = [$no, $name, '', ''];
                 } else {
                     $parent_id_no[2] = $no;
@@ -323,6 +334,10 @@ class Parser
                 }
 
                 for ($i = 1; $row[$i] ?? false; $i ++) {
+                    if (!array_key_exists(0, $parent_id_no)) {
+                        print_R($no);
+                        throw new Exception("沒有 parent_id_no");
+                    }
                     $values = [
                         '單位' => $organization,
                         '工作計畫編號' => $project_list[$i - 1]['工作計畫編號'] ?? '',
@@ -333,12 +348,17 @@ class Parser
                         '第二級用途別科目名稱' => $parent_id_no[3],
                         '費用' => str_replace(',', '', $row[$i]),
                     ];
-                    $callback('各項費用彙計表', self::outputData($cols, $values));
+                    $callback('各項費用彙計表', self::outputData($cols, $values), $type_line['page']);
                 }
                 continue;
             }
-            print_r($row);
-            print_r($type_line['rows']);
+            echo json_encode([
+                'organization' => $organization,
+                'no' => $no,
+                'name' => $name,
+                'row' => $row,
+            ], JSON_UNESCAPED_UNICODE) . "\n";
+            print_r(array_slice($type_line['rows'], 0, 5));
             exit;
         }
     }
@@ -358,6 +378,7 @@ class Parser
         ];
 
         foreach ($type_lines as $type => $type_line) {
+            file_put_contents(__DIR__ . "/tmp.json", json_encode($type_line, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
             if ($type == '各項費用彙計表') {
                 return self::parse各項費用彙計表($type_line, $callback);
             }
@@ -366,14 +387,16 @@ class Parser
             $prev_values = [];
             while ($row = array_shift($type_line['rows'])) {
                 $organization = array_shift($type_line['organizations']);
-                if ($row[4] == '合計') {
+                if (self::clean_space($row[4]) == '合計') {
                     $values = [
                         '款名' => '合計',
+                        '說明' => '',
                         '本年度預算數' => str_replace(',', '', $row[5]),
                         '上年度預算數' => str_replace(',', '', $row[6]),
                         '前年度決算數' => str_replace(',', '', $row[7]),
                         '本年度與上年度比較' => str_replace(',', '', $row[8]),
                     ];
+
                     continue;
                 }
 
@@ -383,21 +406,21 @@ class Parser
                     $clone_row[4] = '';
                     if (implode('', $clone_row) == '') {
                         $row[4] = trim($row[4]);
-                        if (!preg_match('#^[0-9a-z]+$#', $row[4])) {
+                        if (!preg_match('#^[0-9a-z]+$#', self::clean_space($row[4]))) {
                             foreach (['節', '目', '項', '款'] as $c) {
-                                if ($values[$c] != '') {
+                                if (($values[$c] ?? false) !== '') {
                                     break;
                                 }
                             }
-                            $values[$c . '名'] .= $row[4];
+                            $values[$c . '名'] .= self::clean_space($row[4]);
                             continue;
                         }
                         if (!is_null($values)) {
                             $prev_values = $values;
-                            $callback($type, self::outputData($cols[$type], $values));
+                            $callback($type, self::outputData($cols[$type], $values), $type_line['page']);
                         }
                         $values = [
-                            '編號' => $row[4],
+                            '編號' => self::clean_space($row[4]),
                             '款' => $prev_values['款'] ?? '',
                             '款名' => $prev_values['款名'] ?? '',
                             '項' => $prev_values['項'] ?? '',
@@ -414,7 +437,7 @@ class Parser
                     if (preg_match('#^([0-9a-z]+)(.+)$#', $row[4], $matches)) {
                         if (!is_null($values)) {
                             $prev_values = $values;
-                            $callback($type, self::outputData($cols[$type], $values));
+                            $callback($type, self::outputData($cols[$type], $values), $type_line['page']);
                         }
                         $values = [
                             '編號' => $matches[1],
@@ -478,6 +501,9 @@ class Parser
                     }
 
                     if ($row[9] ?? false and $row[9] != '') {
+                        if (!array_key_exists('說明', $values)) {
+                            $values['說明'] = '';
+                        }
                         $values['說明'] .= $row[9];
                         $row[9] = '';
                     }
