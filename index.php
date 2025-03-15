@@ -159,6 +159,19 @@ $('#list').on('click', 'a.btn-html', function(e) {
     // pushState to history, add ?unit_id=xxx&year=xxx&type=xxx&format=html
     history.pushState(null, null, '?unit_id=' + unit_id + '&year=' + year + '&type=' + type + '&format=html');
 });
+$('#list').on('click', 'a.btn-txt', function(e) {
+    e.preventDefault();
+    var unit_id = $(this).closest('li.unit-li').data('unit');
+    var year = $(this).closest('li.year-li').data('year');
+    var type = $(this).closest('li.type-li').data('type');
+    var txt_path = "/txt/" + type + "-" + unit_id + "-" + year + '.txt';
+    // iframe in #content
+    $.get(txt_path, function(data) {
+        $('#content').html('<pre>' + data + '</pre>');
+    }, 'text');
+    // pushState to history, add ?unit_id=xxx&year=xxx&type=xxx&format=txt
+    history.pushState(null, null, '?unit_id=' + unit_id + '&year=' + year + '&type=' + type + '&format=txt');
+});
 </script>
 </body>
 </html>
