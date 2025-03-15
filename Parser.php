@@ -307,6 +307,7 @@ class Parser
             }
 
             // 處理數字
+            $row[0] = str_replace(chr(0xa0) . ' ', chr(0xa0), $row[0]);
             if (preg_match('#^\xa0*(\d+)\s*(.*)$#u', $row[0], $matches)) {
                 $no = $matches[1];
                 $name = $matches[2];
