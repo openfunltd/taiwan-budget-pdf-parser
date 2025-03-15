@@ -274,7 +274,7 @@ class Parser
 
             // 處理合計
             if (preg_replace('#[\xa0\s]#u', '', $row[0]) == '合計') {
-                for ($i = 1; $i < count($project_list); $i ++) {
+                for ($i = 0; $i < count($project_list); $i ++) {
                     $values = [
                         '單位' => $organization,
                         '工作計畫編號' => $project_list[$i]['工作計畫編號'],
@@ -283,7 +283,7 @@ class Parser
                         '第一級用途別科目名稱' => '合計',
                         '第二級用途別科目編號' => '',
                         '第二級用途別科目名稱' => '',
-                        '費用' => str_replace(',', '', $row[$i]),
+                        '費用' => str_replace(',', '', $row[$i + 1]),
                     ];
                     $callback('各項費用彙計表', self::outputData($cols, $values), $type_line['page']);
                 }
