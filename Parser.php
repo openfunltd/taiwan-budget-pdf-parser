@@ -230,20 +230,27 @@ class Parser
             // 處理第一行 工作計畫名稱及編號
             if ($row[0] == '工作計畫名稱及編號') {
                 $project_list = [];
-                // 處理空格
-                if (preg_match('#^([0-9\xa0]+)$#u', $row[1], $matches)) {
-                    $ids = preg_split('#\xa0#u', $matches[1]);
-                    $row[1] = '';
-                    foreach ($ids as $idx => $id) {
-                        if ($row[1 + $idx]) {
-                            print_r($row);
-                            throw new Exception("工作計畫名稱及編號有問題");
-                        }
-                        $row[1 + $idx] = $id;
-                    }
-                }
 
-                for ($i = 1; $row[$i] ?? false; $i ++) {
+                // 處理空格
+                for ($i = 1; $i < count($row); $i ++) {
+                    // nbsp to space
+                    $row[$i] = str_replace(chr(0xc2) . chr(0xa0), ' ', $row[$i]);
+                    if (!preg_match('#^[0-9 ]*$#', $row[$i])) {
+                        print_r($row);
+                        var_dump($row);
+                        throw new Exception("工作計畫名稱及編號有問題");
+                    }
+                    if (preg_match('#^([0-9 ]+)$#u', $row[$i], $matches)) {
+                        $ids = preg_split('# +#u', trim($matches[1]));
+                        $row[$i] = '';
+                        foreach ($ids as $idx => $id) {
+                            if ($row[$i + $idx]) {
+                                throw new Exception("工作計畫名稱及編號有問題");
+                            }
+                            $row[$i + $idx] = trim($id);
+                        }
+                    }
+
                     $project_list[] = [
                         '工作計畫編號' => $row[$i],
                         '工作計畫名稱' => '',
