@@ -14,6 +14,7 @@ class Parser
     {
         $contents = explode('<!DOCTYPE html>', file_get_contents($file));
         $type_lines = [];
+        $page_showed = [];
         foreach ($contents as $html_content) {
             if (!$html_content) {
                 continue;
@@ -22,6 +23,11 @@ class Parser
                 throw new Exception("找不到頁數");
             }
             $page = $matches[1];
+            if (array_key_exists($page, $page_showed)) {
+                continue;
+            }
+            $page_showed[$page] = true;
+
             //error_log("Page: $page");
             $doc = new DOMDocument();
             @$doc->loadHTML($html_content);
