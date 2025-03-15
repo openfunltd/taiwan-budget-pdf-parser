@@ -105,6 +105,9 @@ class Parser
                     $g = ($color >> 8) & 0xFF;
                     $b = $color & 0xFF;
                     if ($r < 100 && $g < 100 && $b < 100) {
+                        if (count($black) and abs($x - $black[count($black) - 1] ?? 0) < 5) {
+                            continue;
+                        }
                         $black[] = $x;
                     }
                 }
@@ -140,7 +143,7 @@ class Parser
                 throw new Exception("找不到名稱及編號");
             }
             // 最後一個 line_box 的 content 檢查是否與頁碼相同
-            if (!preg_match('#^\d+$#', $line_boxes[count($line_boxes) - 1]['content'])) {
+            if (count($line_boxes) and !preg_match('#^\d+$#', $line_boxes[count($line_boxes) - 1]['content'])) {
                 print_r($line_boxes[count($line_boxes) - 1]);
                 print_r($page);
                 continue;
