@@ -4,6 +4,9 @@ class Parser
 {
     public static function toHTML($pdffile, $target = null)
     {
+        if (file_exists("{$target}/html-html.html")) {
+            return;
+        }
         system("pdftohtml -c -s " . escapeshellarg($pdffile) . " " . escapeshellarg($target));
     }
 
