@@ -7,6 +7,9 @@ class Parser
         if (file_exists("{$target}/html-html.html")) {
             return;
         }
+        if (file_exists("{$target}-html.html")) {
+            return;
+        }
         system("pdftohtml -c -s " . escapeshellarg($pdffile) . " " . escapeshellarg($target));
     }
 
@@ -149,12 +152,14 @@ class Parser
                 throw new Exception("找不到名稱及編號");
             }
             // 最後一個 line_box 的 content 檢查是否與頁碼相同
+            /*
             if (count($line_boxes) and !preg_match('#^\d+$#', $line_boxes[count($line_boxes) - 1]['content'])) {
-                print_r($line_boxes[count($line_boxes) - 1]);
-                print_r($page);
+                //print_r($line_boxes[count($line_boxes) - 1]);
+                //print_r($page);
                 continue;
                 throw new Exception("頁碼不符");
             }
+             */
             array_pop($line_boxes);
 
             foreach ($line_boxes as $line_box) {
@@ -314,7 +319,11 @@ class Parser
 
                 while (true) {
                     // 處理名稱被擠到下一行
-                    if (count($type_line['rows']) and preg_match('#^[^0-9]+#', $type_line['rows'][0][0]) and implode('', array_slice($type_line['rows'][0], 1)) == '') {
+                    if (count($type_line['rows'])
+                        and preg_match('#^[^0-9]+#', $type_line['rows'][0][0]) 
+                        and $type_line['rows'][0][0] != '工作計畫名稱及編號'
+                        and implode('', array_slice($type_line['rows'][0], 1)) == ''
+                    ) {
                         $row2 = array_shift($type_line['rows']);
                         $organization = array_shift($type_line['organizations']);
                         $name .= $row2[0];
@@ -377,9 +386,15 @@ class Parser
                 'no' => $no,
                 'name' => $name,
                 'row' => $row,
+            ]) . "\n";
+            echo json_encode([
+                'organization' => $organization,
+                'no' => $no,
+                'name' => $name,
+                'row' => $row,
             ], JSON_UNESCAPED_UNICODE) . "\n";
-            print_r(array_slice($type_line['rows'], 0, 5));
-            exit;
+            print_r(array_slice($type_line['rows'], 0, 2));
+            throw new Exception("沒有符合的行");
         }
     }
 
@@ -512,6 +527,16 @@ class Parser
                 }
 
                 if (strpos($type_line['header_text'], '前年度') !== false) {
+                    for ($i = 5; $i < 8; $i ++) {
+                        if (strpos($row[$i], chr(0xa0)) !== false) {
+                            if ($row[$i + 1] != '') {
+                                throw new Exception("前年度數字有問題");
+                            }
+                            $row[$i + 1] = explode(chr(0xa0), $row[$i], 2)[1];
+                            $row[$i] = explode(chr(0xa0), $row[$i], 2)[0];
+                        }
+                    }
+
                     if ($row[5] != '' and $row[6] != '' and $row[7] != '' and $row[8] != '') {
                         $values['本年度預算數'] = str_replace(',', '', $row[5]);
                         $values['上年度預算數'] = str_replace(',', '', $row[6]);
@@ -558,10 +583,16 @@ class Parser
                     continue;
                 }
 
+                if ($values['編號'] == '5926018000' and $row[8] == '0' and implode('', array_slice($row, 0, 8)) == '') {
+                    $values['本年度與上年度比較'] .= '0';
+                    continue;
+                }
+
                 print_r($values);
+                echo "current = " . json_encode($row) . "\n";
                 echo "current = " . json_encode($row, JSON_UNESCAPED_UNICODE) . "\n";
                 echo json_encode(array_slice($type_line['rows'], 0, 5), JSON_UNESCAPED_UNICODE) . "\n";
-                exit;
+                throw new Exception("沒有符合的行");
             }
         }
     }
