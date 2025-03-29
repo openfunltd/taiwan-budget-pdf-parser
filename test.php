@@ -9,12 +9,13 @@ $file = __DIR__ . '/內政部.pdf';
 if ($_SERVER['argc'] > 1) {
     $file = $_SERVER['argv'][1];
 }
-Parser::toHTML($file);
-$type_lines = Parser::parseHTML(__DIR__ . "/tmp/tmp-html.html");
+mkdir(__DIR__ . "/tmp");
+Parser::toHTML($file, __DIR__ . "/tmp/html");
+$type_lines = Parser::parseHTML(__DIR__ . "/tmp/html-html.html");
 $fps = [];
 $ret = Parser::parseData($type_lines, function($type, $rows) use (&$fps) {
     if (!($fps[$type] ?? false)) {
-        $fps[$type] = fopen(__DIR__ . "/outputs/{$type}.csv", 'w');
+        $fps[$type] = fopen(__DIR__ . "/tmp/{$type}.csv", 'w');
         fputcsv($fps[$type], array_keys($rows));
     }
     fputcsv($fps[$type], array_values($rows));
