@@ -10,7 +10,8 @@ class Parser
         if (file_exists("{$target}-html.html")) {
             return;
         }
-        system("pdftohtml -c -s " . escapeshellarg($pdffile) . " " . escapeshellarg($target));
+        $cmd = sprintf("pdftohtml -c -s %s %s 2>&1 > /dev/null", escapeshellarg($pdffile), escapeshellarg($target));
+        system($cmd, $ret);
     }
 
     public static function parseHTML($file)
