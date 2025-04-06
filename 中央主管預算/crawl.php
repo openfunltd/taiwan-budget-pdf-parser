@@ -1,6 +1,8 @@
 <?php
 
-mkdir(__DIR__ . "/data/pdf");
+include(__DIR__ . "/../Parser.php");
+@mkdir(__DIR__ . "/data/pdf");
+@mkdir(__DIR__ . "/data/csv");
 $list_file = __DIR__ . "/list.csv";
 if (!file_exists($list_file)) {
     $cmd = sprintf("wget %s -O %s",
@@ -31,7 +33,38 @@ while ($rows = fgetcsv($fp, escape:",")) {
                 escapeshellarg($v),
                 escapeshellarg($pdf_file)
             );
-            system($cmd);
+            system($cmd, $ret);
+            if ($ret !== 0) {
+                unlink($pdf_file);
+                throw new Exception("Failed to download PDF: {$pdf_file}");
+            }
+        }
+
+        $csv_dir = __DIR__ . "/data/csv/{$name}-{$k}";
+        if (file_exists($csv_dir)) {
+            continue;
+        }
+        system(sprintf("rm -rf %s", escapeshellarg(__DIR__ . "/data/tmp")));
+        mkdir(__DIR__ . "/data/tmp");
+        Parser::toHTML($pdf_file, __DIR__ . "/data/tmp/html");
+        if (!file_exists(__DIR__ . "/data/tmp/html-html.html")) {
+            throw new Exception("HTML file not found: {$pdf_file}");
+        }
+        $type_lines = Parser::parseHTML(__DIR__ . "/data/tmp/html-html.html");
+        file_put_contents(__DIR__ . "/data/tmp/type_lines.json", json_encode($type_lines, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        $fps = [];
+        $ret = Parser::parseData($type_lines, function($type, $rows) use ($csv_dir, &$fps) {
+            if (!($fps[$type] ?? false)) {
+                if (!file_exists($csv_dir)) {
+                    mkdir($csv_dir, 0777, true);
+                }
+                $fps[$type] = fopen("{$csv_dir}/{$type}.csv", 'w');
+                fputcsv($fps[$type], array_keys($rows), escape:",");
+            }
+            fputcsv($fps[$type], array_values($rows), escape:",");
+        });
+        foreach($fps AS $fp_csv) {
+            fclose($fp_csv);
         }
     }
 }
