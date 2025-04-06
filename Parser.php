@@ -60,8 +60,7 @@ class Parser
                 continue;
             }
             usort($boxes, function ($a, $b) {
-
-                if (abs($a['top'] - $b['top']) < 5) {
+                if (abs($a['top'] - $b['top']) <= 7) {
                     return $a['left'] <=> $b['left'];
                 }
                 return $a['top'] <=> $b['top'] ?: $a['left'] <=> $b['left'];
@@ -76,7 +75,7 @@ class Parser
             ];
             $top = null;
             foreach ($boxes as $box) {
-                if ($top !== null && $top + 5 < $box['top']) {
+                if ($top !== null && abs($top - $box['top']) > 7) {
                     $content .= "\n";
                     $line_boxes[] = $line_box;
                     $line_box = [
@@ -88,7 +87,7 @@ class Parser
                 $line_box['boxes'][] = $box;
                 $line_box['content'] .= $box['text'];
                 $content .= $box['text'];
-                $top = $box['top'];
+                $top = max($top, $box['top']);
             }
             $line_boxes[] = $line_box;
 
@@ -122,7 +121,7 @@ class Parser
                     $g = ($color >> 8) & 0xFF;
                     $b = $color & 0xFF;
                     if ($r < 100 && $g < 100 && $b < 100) {
-                        if (count($black) and abs($x - $black[count($black) - 1] ?? 0) < 5) {
+                        if (count($black) and abs($x - $black[count($black) - 1] ?? 0) < 7) {
                             continue;
                         }
                         $black[] = $x;
@@ -251,7 +250,7 @@ class Parser
 
         foreach ($type_line['rows'] as $idx => $row) {
             // 處理 第一、二級用途別科目名稱及編號 被斷成兩行
-            if (($type_line['rows'][$idx + 1] ?? false) and self::clean_space(self::clean_space($row[0] . $type_line['rows'][$idx + 1][0])) == '第一、二級用途別科目名稱及編號') {
+            if (($type_line['rows'][$idx + 1] ?? false) and self::clean_space($row[0] . $type_line['rows'][$idx + 1][0]) == '第一、二級用途別科目名稱及編號') {
                 $type_line['rows'][$idx][0] = '第一、二級用途別科目名稱及編號';
                 $type_line['rows'][$idx + 1][0] = '';
             }
@@ -272,7 +271,7 @@ class Parser
                 for ($i = 1; $i < count($row); $i ++) {
                     // nbsp to space
                     $row[$i] = str_replace(chr(0xc2) . chr(0xa0), ' ', $row[$i]);
-                    if (!preg_match('#^[0-9 ]*$#', $row[$i])) {
+                    if (!preg_match('#^[0-9A ]*$#', $row[$i])) {
                         print_r($row);
                         var_dump($row);
                         throw new Exception("工作計畫名稱及編號有問題");
@@ -298,7 +297,7 @@ class Parser
                 $row = array_shift($type_line['rows']);
                 $organization = array_shift($type_line['organizations']);
                 if ($row[0] != '第一、二級用途別科目名稱及編號') {
-                    throw new Exception("工作計畫名稱及編號下一行必需要是「第一、二級用途別科目名稱及編號」");
+                    throw new Exception("工作計畫名稱及編號下一行必需要是「第一、二級用途別科目名稱及編號」，結果是 " . $row[0]);
                 }
                 for ($i = 1; $row[$i] ?? false; $i ++) {
                     $project_list[$i - 1]['工作計畫名稱'] = self::clean_space($row[$i]);
@@ -334,7 +333,7 @@ class Parser
 
             // 處理數字
             $row[0] = str_replace(chr(0xa0) . ' ', chr(0xa0), $row[0]);
-            if (preg_match('#^\xa0*(\d+)\s*(.*)$#u', $row[0], $matches)) {
+            if (preg_match('#^\xa0*(\d+|※)\s*(.*)$#u', $row[0], $matches)) {
                 $no = $matches[1];
                 $name = $matches[2];
 
@@ -376,7 +375,7 @@ class Parser
                     break;
                 }
 
-                if ($no % 100 == 0) {
+                if ($no == '※' or $no % 100 == 0) {
                     $parent_id_no = [$no, $name, '', ''];
                 } else {
                     $parent_id_no[2] = $no;
@@ -396,7 +395,7 @@ class Parser
                         '第一級用途別科目名稱' => $parent_id_no[1],
                         '第二級用途別科目編號' => $parent_id_no[2],
                         '第二級用途別科目名稱' => $parent_id_no[3],
-                        '費用' => str_replace(',', '', $row[$i]),
+                        '費用' => self::clean_space(str_replace(',', '', $row[$i])),
                     ];
                     $callback('各項費用彙計表', self::outputData($cols, $values), $type_line['page']);
                 }
