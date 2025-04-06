@@ -16,6 +16,9 @@ class Parser
 
     public static function parseHTML($file)
     {
+        if (!file_exists($file)) {
+            throw new Exception("找不到檔案 $file");
+        }
         $contents = explode('<!DOCTYPE html>', file_get_contents($file));
         $type_lines = [];
         $page_showed = [];
