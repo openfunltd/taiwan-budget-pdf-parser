@@ -138,7 +138,9 @@ class Parser
                 $line_box = array_shift($line_boxes);
                 $line = $line_box['content'];
                 $header_text .= $line;
-                $header_boxes[] = $line;
+                if (self::clean_space($line)) {
+                    $header_boxes[] = $line;
+                }
                 
                 if (in_array($type, ['各項費用彙計表'])) {
                     // 如果是各項費用彙計表，就處理到單位之後
@@ -189,6 +191,10 @@ class Parser
                 foreach ($header_boxes as $idx => $header_box) {
                     if (strpos($header_box, $type) === 0) {
                         $organization = $header_boxes[$idx - 1];
+                        if (!self::clean_space($organization)) {
+                            print_r($header_boxes);
+                            throw new Exception("找不到單位名稱");
+                        }
                         break;
                     }
                 }
@@ -238,9 +244,18 @@ class Parser
         ];
         $project_list = null; // 工作計畫名稱及編號
         $parent_id_no = null; // 第一級用途別科目名稱及編號
+
+        foreach ($type_line['rows'] as $idx => $row) {
+            // 處理 第一、二級用途別科目名稱及編號 被斷成兩行
+            if (($type_line['rows'][$idx + 1] ?? false) and self::clean_space(self::clean_space($row[0] . $type_line['rows'][$idx + 1][0])) == '第一、二級用途別科目名稱及編號') {
+                $type_line['rows'][$idx][0] = '第一、二級用途別科目名稱及編號';
+                $type_line['rows'][$idx + 1][0] = '';
+            }
+        }
+        file_put_contents(__DIR__ . "/tmp.json", json_encode($type_line, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+
         while ($row = array_shift($type_line['rows'])) {
             $organization = array_shift($type_line['organizations']);
-
             // 處理全空白
             if (self::clean_space(implode('', $row)) == '') {
                 continue;
@@ -278,20 +293,18 @@ class Parser
                 // 處理下一行名稱
                 $row = array_shift($type_line['rows']);
                 $organization = array_shift($type_line['organizations']);
+                if ($row[0] != '第一、二級用途別科目名稱及編號') {
+                    throw new Exception("工作計畫名稱及編號下一行必需要是「第一、二級用途別科目名稱及編號」");
+                }
                 for ($i = 1; $row[$i] ?? false; $i ++) {
-                    $project_list[$i - 1]['工作計畫名稱'] = $row[$i];
+                    $project_list[$i - 1]['工作計畫名稱'] = self::clean_space($row[$i]);
                 }
-                if ($type_line['rows'][0][0] == '第一、二級用途別科目名稱及編號') {
-                    array_shift($type_line['rows']);
-                    array_shift($type_line['organizations']);
-                }
-
                 // 如果後面還有文字，表示字太多要追加
                 while ($type_line['rows'][0][0] == '') {
                     $row = array_shift($type_line['rows']);
                     $organization = array_shift($type_line['organizations']);
-                    for ($i = 1; $row[$i] ?? false; $i ++) {
-                        $project_list[$i - 1]['工作計畫名稱'] .= $row[$i];
+                    for ($i = 1; $i <= count($row); $i ++) {
+                        $project_list[$i - 1]['工作計畫名稱'] .= self::clean_space($row[$i]);
                     }
                 }
                 continue;
@@ -366,7 +379,7 @@ class Parser
                     $parent_id_no[3] = $name;
                 }
 
-                for ($i = 1; $row[$i] ?? false; $i ++) {
+                for ($i = 1; $i < count($row); $i ++) {
                     if (!array_key_exists(0, $parent_id_no)) {
                         print_R($no);
                         throw new Exception("沒有 parent_id_no");
