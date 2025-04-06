@@ -60,6 +60,10 @@ class Parser
                 continue;
             }
             usort($boxes, function ($a, $b) {
+
+                if (abs($a['top'] - $b['top']) < 5) {
+                    return $a['left'] <=> $b['left'];
+                }
                 return $a['top'] <=> $b['top'] ?: $a['left'] <=> $b['left'];
             });
 
