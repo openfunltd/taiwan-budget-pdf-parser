@@ -414,18 +414,39 @@ class Parser
         ];
 
         foreach ($type_lines as $type => $type_line) {
-            file_put_contents(__DIR__ . "/tmp.json", json_encode($type_line, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
             if ($type == '各項費用彙計表') {
                 return self::parse各項費用彙計表($type_line, $callback);
             }
+
+            // 先處理如果代碼跟名稱在 $row[4] 的，把他拆成兩行
+            foreach ($type_line['rows'] as $idx => $row) {
+                if ($idx == count($type_line['rows']) - 1) {
+                    continue;
+                }
+                if ($type_line['rows'][$idx + 1][4] != '') {
+                    continue;
+                }
+                if (preg_match('#^([0-9a-z]+)(.+)$#', self::clean_space($row[4]), $matches)) {
+                    $type_line['rows'][$idx][4] = $matches[1];
+                    $type_line['rows'][$idx + 1][4] = $matches[2];
+                    continue;
+                }
+            }
+            file_put_contents(__DIR__ . "/tmp.json", json_encode($type_line, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
             $no = null;
             $values = null;
             $prev_values = [];
             while ($row = array_shift($type_line['rows'])) {
                 $organization = array_shift($type_line['organizations']);
-                if (self::clean_space($row[4]) == '合計') {
+                if (in_array(self::clean_space($row[4]), [
+                    '合計',
+                    '(1.一般政務支出)',
+                ])) {
+                    if (!is_null($values)) {
+                        $callback($type, self::outputData($cols[$type], $values), $type_line['page']);
+                    }
                     $values = [
-                        '款名' => '合計',
+                        '款名' => self::clean_space($row[4]),
                         '說明' => '',
                         '本年度預算數' => str_replace(',', '', $row[5]),
                         '上年度預算數' => str_replace(',', '', $row[6]),
@@ -440,9 +461,11 @@ class Parser
                 if ($row[4] != '') {
                     $clone_row = $row;
                     $clone_row[4] = '';
+                    // 確認只有第四欄有值的狀況
                     if (implode('', $clone_row) == '') {
                         $row[4] = trim($row[4]);
-                        if (!preg_match('#^[0-9a-z]+$#', self::clean_space($row[4]))) {
+                        // 如果裡面不是 3100000000總統府 之類的格式，表示是名稱，寫入名稱繼續
+                        if (!preg_match('#^([0-9a-z]+)(.*)#', self::clean_space($row[4]), $matches)) {
                             foreach (['節', '目', '項', '款'] as $c) {
                                 if (($values[$c] ?? false) !== '') {
                                     break;
@@ -456,7 +479,7 @@ class Parser
                             $callback($type, self::outputData($cols[$type], $values), $type_line['page']);
                         }
                         $values = [
-                            '編號' => self::clean_space($row[4]),
+                            '編號' => self::clean_space($matches[1]),
                             '款' => $prev_values['款'] ?? '',
                             '款名' => $prev_values['款名'] ?? '',
                             '項' => $prev_values['項'] ?? '',
@@ -579,6 +602,7 @@ class Parser
                         $row[4] = '';
                     }
                 }
+
 
                 if (implode('', $row) == '') {
                     continue;
