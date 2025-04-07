@@ -12,6 +12,13 @@ if (!file_exists($list_file)) {
     system($cmd);
 }
 
+$tables = [
+    '歲入來源別預算表',
+    '歲出政事別預算表',
+    '歲出機關別預算表',
+];
+
+$outputs = [];
 $fp = fopen($list_file, "r");
 $cols = fgetcsv($fp, escape:",");
 while ($rows = fgetcsv($fp, escape:",")) {
@@ -40,31 +47,56 @@ while ($rows = fgetcsv($fp, escape:",")) {
             }
         }
 
-        $csv_dir = __DIR__ . "/data/csv/{$name}-{$k}";
-        if (file_exists($csv_dir)) {
+        if ($name == '環境部' and ($k == 113 or $k == 112)) {
+            // 掃描版PDF
             continue;
         }
-        system(sprintf("rm -rf %s", escapeshellarg(__DIR__ . "/data/tmp")));
-        mkdir(__DIR__ . "/data/tmp");
-        Parser::toHTML($pdf_file, __DIR__ . "/data/tmp/html");
-        if (!file_exists(__DIR__ . "/data/tmp/html-html.html")) {
-            throw new Exception("HTML file not found: {$pdf_file}");
-        }
-        $type_lines = Parser::parseHTML(__DIR__ . "/data/tmp/html-html.html");
-        file_put_contents(__DIR__ . "/data/tmp/type_lines.json", json_encode($type_lines, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-        $fps = [];
-        $ret = Parser::parseData($type_lines, function($type, $rows) use ($csv_dir, &$fps) {
-            if (!($fps[$type] ?? false)) {
-                if (!file_exists($csv_dir)) {
-                    mkdir($csv_dir, 0777, true);
-                }
-                $fps[$type] = fopen("{$csv_dir}/{$type}.csv", 'w');
-                fputcsv($fps[$type], array_keys($rows), escape:",");
+        $csv_dir = __DIR__ . "/data/csv/{$name}-{$k}";
+        if (!file_exists($csv_dir)) {
+            error_log("{$csv_dir} {$pdf_file}");
+            system(sprintf("rm -rf %s", escapeshellarg(__DIR__ . "/data/tmp")));
+            mkdir(__DIR__ . "/data/tmp");
+            Parser::toHTML($pdf_file, __DIR__ . "/data/tmp/html");
+            if (!file_exists(__DIR__ . "/data/tmp/html-html.html")) {
+                throw new Exception("HTML file not found: {$pdf_file}");
             }
-            fputcsv($fps[$type], array_values($rows), escape:",");
-        });
-        foreach($fps AS $fp_csv) {
-            fclose($fp_csv);
+            $type_lines = Parser::parseHTML(__DIR__ . "/data/tmp/html-html.html");
+            file_put_contents(__DIR__ . "/data/tmp/type_lines.json", json_encode($type_lines, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            $fps = [];
+            $ret = Parser::parseData($type_lines, function($type, $rows) use ($csv_dir, &$fps) {
+                if (!($fps[$type] ?? false)) {
+                    if (!file_exists($csv_dir)) {
+                        mkdir($csv_dir, 0777, true);
+                    }
+                    $fps[$type] = fopen("{$csv_dir}/{$type}.csv", 'w');
+                    fputcsv($fps[$type], array_keys($rows), escape:",");
+                }
+                fputcsv($fps[$type], array_values($rows), escape:",");
+            });
+            foreach($fps AS $fp_csv) {
+                fclose($fp_csv);
+            }
+        }
+
+        foreach ($tables as $t) {
+            if (!file_exists("{$csv_dir}/{$t}.csv")) {
+                continue;
+            }
+            $fp_table = fopen("{$csv_dir}/{$t}.csv", 'r');
+            $table_cols = fgetcsv($fp_table, escape:",");
+
+            if (!($outputs[$t] ?? false)) {
+                $outputs[$t] = fopen(__DIR__ . "/data/{$t}.csv", 'w');
+                fputcsv($outputs[$t], array_merge([
+                    '主管', '年度',
+                ], $table_cols), escape:",");
+            }
+            while ($rows = fgetcsv($fp_table, escape:",")) {
+                fputcsv($outputs[$t], array_merge([
+                    $name, $k,
+                ], $rows), escape:",");
+            }
+            fclose($fp_table);
         }
     }
 }
