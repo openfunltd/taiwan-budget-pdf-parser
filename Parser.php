@@ -238,7 +238,7 @@ class Parser
         return $s;
     }
 
-    public static function parse各項費用彙計表($type_line, $callback)
+    public static function parse各項費用彙計表($type_line, $callback, $type)
     {
         $cols = [
             '單位',
@@ -340,7 +340,7 @@ class Parser
                         '第二級用途別科目名稱' => '',
                         '費用' => str_replace(',', '', $row[$i + 1]),
                     ];
-                    $callback('各項費用彙計表', self::outputData($cols, $values), $type_line['page']);
+                    $callback($type, self::outputData($cols, $values), $type_line['page']);
                 }
                 continue;
             }
@@ -411,7 +411,7 @@ class Parser
                         '第二級用途別科目名稱' => $parent_id_no[3],
                         '費用' => self::clean_space(str_replace(',', '', $row[$i])),
                     ];
-                    $callback('各項費用彙計表', self::outputData($cols, $values), $type_line['page']);
+                    $callback($type, self::outputData($cols, $values), $type_line['page']);
                 }
                 continue;
             }
@@ -451,7 +451,7 @@ class Parser
                 '各項費用彙計表',
                 '各機關各項費用彙計表',
             ])) {
-                return self::parse各項費用彙計表($type_line, $callback);
+                return self::parse各項費用彙計表($type_line, $callback, $type);
             }
 
             // 先處理如果代碼跟名稱在 $row[4] 的，把他拆成兩行
