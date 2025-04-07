@@ -37,6 +37,7 @@ class Parser
 
             //error_log("Page: $page");
             $doc = new DOMDocument();
+            $html_content = iconv('utf-8', 'utf-8//IGNORE', $html_content);
             @$doc->loadHTML($html_content);
             $boxes = [];
             $prev_box = null;
@@ -96,6 +97,7 @@ class Parser
                 '歲入來源別預算表',
                 '歲出政事別預算表',
                 '歲出機關別預算表',
+                '各機關各項費用彙計表',
                 '各項費用彙計表',
             ];
             $type = null;
@@ -145,7 +147,10 @@ class Parser
                     $header_boxes[] = $line;
                 }
                 
-                if (in_array($type, ['各項費用彙計表'])) {
+                if (in_array($type, [
+                    '各項費用彙計表',
+                    '各機關各項費用彙計表',
+                ])) {
                     // 如果是各項費用彙計表，就處理到單位之後
                     if (strpos($line, '單位：') !== false) {
                         break;
@@ -264,8 +269,17 @@ class Parser
                 continue;
             }
             // 處理第一行 工作計畫名稱及編號
-            if ($row[0] == '工作計畫名稱及編號') {
+            if (in_array(self::clean_space($row[0]), [
+                '工作計畫名稱及編號',
+                '機關(構)',
+            ])) {
                 $project_list = [];
+
+                // 如果第一行後面都空白，第二行第一格是空白，表示被拆成兩行
+                if (implode('', array_slice($row, 1)) == '' and $type_line['rows'][0][0] == '') {
+                    $row = array_shift($type_line['rows']);
+                    $organization = array_shift($type_line['organizations']);
+                }
 
                 // 處理空格
                 for ($i = 1; $i < count($row); $i ++) {
@@ -341,7 +355,7 @@ class Parser
                     // 處理名稱被擠到下一行
                     if (count($type_line['rows'])
                         and preg_match('#^[^0-9]+#', $type_line['rows'][0][0]) 
-                        and $type_line['rows'][0][0] != '工作計畫名稱及編號'
+                        and !in_array(self::clean_space($type_line['rows'][0][0]), ['工作計畫名稱及編號', '機關(構)'])
                         and implode('', array_slice($type_line['rows'][0], 1)) == ''
                     ) {
                         $row2 = array_shift($type_line['rows']);
@@ -433,7 +447,10 @@ class Parser
         ];
 
         foreach ($type_lines as $type => $type_line) {
-            if ($type == '各項費用彙計表') {
+            if (in_array($type, [
+                '各項費用彙計表',
+                '各機關各項費用彙計表',
+            ])) {
                 return self::parse各項費用彙計表($type_line, $callback);
             }
 
