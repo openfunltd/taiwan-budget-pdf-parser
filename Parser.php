@@ -116,23 +116,36 @@ class Parser
                 $backgroup_image = $matches[1];
                 $gd = imagecreatefrompng(dirname($file) . "/" . $backgroup_image);
                 // 檢查圖片中 top=300 中，從左到右有哪些 pixel 是有黑色的點
-                $black = [];
+                $vertical_black = [];
                 for ($x = 0; $x < imagesx($gd); $x++) {
                     $color = imagecolorat($gd, $x, 500);
                     $r = ($color >> 16) & 0xFF;
                     $g = ($color >> 8) & 0xFF;
                     $b = $color & 0xFF;
                     if ($r < 100 && $g < 100 && $b < 100) {
-                        if (count($black) and abs($x - $black[count($black) - 1] ?? 0) < 7) {
+                        if (count($vertical_black) and abs($x - $vertical_black[count($vertical_black) - 1] ?? 0) < 7) {
                             continue;
                         }
-                        $black[] = $x;
+                        $vertical_black[] = $x;
+                    }
+                }
+                $horizontal_black = [];
+                for ($y = 0; $y < imagesy($gd); $y++) {
+                    $color = imagecolorat($gd, imagesx($gd) / 2, $y);
+                    $r = ($color >> 16) & 0xFF;
+                    $g = ($color >> 8) & 0xFF;
+                    $b = $color & 0xFF;
+                    if ($r < 100 && $g < 100 && $b < 100) {
+                        if (count($horizontal_black) and abs($y - $horizontal_black[count($horizontal_black) - 1] ?? 0) < 7) {
+                            continue;
+                        }
+                        $horizontal_black[] = $y;
                     }
                 }
 
                 // 如果最右邊一條線距離右邊太近，表示可能是縣市格式，把最左右邊線拿掉
-                if (imagesx($gd) - $black[count($black) - 1] < 100) {
-                    $black = array_slice($black, 1, count($black) - 2);
+                if (imagesx($gd) - $vertical_black[count($vertical_black) - 1] < 100) {
+                    $vertical_black = array_slice($vertical_black, 1, count($vertical_black) - 2);
                 }
             }
 
@@ -174,22 +187,29 @@ class Parser
                 throw new Exception("頁碼不符");
             }
              */
-            array_pop($line_boxes);
-
             foreach ($line_boxes as $line_box) {
-                $rows = array_fill(0, count($black) + 1, '');
+                $rows = array_fill(0, count($vertical_black) + 1, '');
                 foreach ($line_box['boxes'] as $box) {
                     $left = $box['left'];
+                    $top = $box['top'];
                     $text = $box['text'];
+                    if (strpos($text, '附註') !== false) {
+                        print_r($box);
+                        print_r($horizontal_black);
+                    }
+                    // 如果是在最後一個 $horizontal_black 的下面的話，表示可能是頁碼或是備註
+                    if (count($horizontal_black) and $top > $horizontal_black[count($horizontal_black) - 1]) {
+                        continue;
+                    }
                     $black_index = null;
-                    foreach ($black as $index => $x) {
+                    foreach ($vertical_black as $index => $x) {
                         if ($left < $x) {
                             $black_index = $index;
                             break;
                         }
                     }
                     if ($black_index === null) {
-                        $black_index = count($black);
+                        $black_index = count($vertical_black);
                     }
                     $rows[$black_index] = $rows[$black_index] ?? '';
                     $rows[$black_index] .= str_replace('　', '', $text);
