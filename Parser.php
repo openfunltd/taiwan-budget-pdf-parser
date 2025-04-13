@@ -231,14 +231,19 @@ class Parser
                     $type_lines[$type] = [
                         'type' => $type,
                         'header_text' => $header_text,
-                        'header_boxes' => $header_boxes,
                         'organizations' => [],
                         'rows' => [],
                         'page' => $page,
+                        'header_boxes' => [$page => $header_boxes],
+                        'vertical_black' => [$page => $vertical_black],
+                        'horizontal_black' => [$page => $horizontal_black],
                     ];
                 }
                 $type_lines[$type]['rows'][] = $rows;
                 $type_lines[$type]['organizations'][] = $organization;
+                $type_lines[$type]['vertical_black'][$page] = $vertical_black;
+                $type_lines[$type]['horizontal_black'][$page] = $horizontal_black;
+                $type_lines[$type]['header_boxes'][$page] = $header_boxes;
             }
         }
         return $type_lines;
