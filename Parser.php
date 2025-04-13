@@ -524,6 +524,14 @@ class Parser
                 return self::parse各項費用彙計表($type_line, $callback, $type);
             }
 
+            // 如果前面整行只有說明，就刪掉
+            if (self::clean_space(implode('', $type_line['rows'][0])) == '說明') {
+                array_shift($type_line['rows']);
+                array_shift($type_line['organizations']);
+            }
+            $type_line['rows'] = array_values($type_line['rows']);
+            $type_line['organizations'] = array_values($type_line['organizations']);
+
             // 先處理如果代碼跟名稱在 $row[4] 的，把他拆成兩行
             foreach ($type_line['rows'] as $idx => $row) {
                 if ($idx == count($type_line['rows']) - 1) {
