@@ -373,8 +373,10 @@ class Parser
                 while ($type_line['rows'][0][0] == '') {
                     $row = array_shift($type_line['rows']);
                     $organization = array_shift($type_line['organizations']);
-                    for ($i = 1; $i <= count($row); $i ++) {
-                        $project_list[$i - 1]['工作計畫名稱'] .= self::clean_space($row[$i]);
+                    for ($i = 1; $i < count($row); $i ++) {
+                        if ($row[$i]) {
+                            $project_list[$i - 1]['工作計畫名稱'] .= self::clean_space($row[$i]);
+                        }
                     }
                 }
                 continue;
