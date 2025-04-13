@@ -278,13 +278,41 @@ class Parser
         $project_list = null; // 工作計畫名稱及編號
         $parent_id_no = null; // 第一級用途別科目名稱及編號
 
+        $header_content = null;
         foreach ($type_line['rows'] as $idx => $row) {
             // 處理 第一、二級用途別科目名稱及編號 被斷成兩行
             if (($type_line['rows'][$idx + 1] ?? false) and self::clean_space($row[0] . $type_line['rows'][$idx + 1][0]) == '第一、二級用途別科目名稱及編號') {
                 $type_line['rows'][$idx][0] = '第一、二級用途別科目名稱及編號';
                 $type_line['rows'][$idx + 1][0] = '';
             }
+
+            // 如果 header 完全相同，可以忽略 header（處理資料被分到兩頁的情況）
+            if (strpos($row[0], '工作計畫名稱及編號') !== false) {
+                $current_header_content = implode('', $row)
+                    . implode('', $type_line['rows'][$idx + 1])
+                    . implode('', $type_line['rows'][$idx + 2]);
+                $current_header_content = self::clean_space($current_header_content);
+                if ($header_content == $current_header_content) {
+                    unset($type_line['rows'][$idx]);
+                    unset($type_line['rows'][$idx + 1]);
+                    unset($type_line['rows'][$idx + 2]);
+                    unset($type_line['organizations'][$idx]);
+                    unset($type_line['organizations'][$idx + 1]);
+                    unset($type_line['organizations'][$idx + 2]); 
+                    continue;
+                }
+                $header_content = $current_header_content;
+            }
+
+            if (implode('', $row) == '') {
+                unset($type_line['rows'][$idx]);
+                unset($type_line['organizations'][$idx]);
+                continue;
+            }
         }
+        $type_line['rows'] = array_values($type_line['rows']);
+        $type_line['organizations'] = array_values($type_line['organizations']);
+
         file_put_contents(__DIR__ . "/tmp.json", json_encode($type_line, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
         while ($row = array_shift($type_line['rows'])) {
