@@ -304,12 +304,27 @@ class Parser
                 $header_content = $current_header_content;
             }
 
+        }
+
+        // 如果這一行是「工作計畫名稱及編號」，但是「第一、二級用途別科目名稱及編號」在下下一行，把他拉上來
+        foreach ($type_line['rows'] as $idx => $row) {
+            if (strpos($row[0], '工作計畫名稱及編號') !== false) {
+                if ($type_line['rows'][$idx + 2][0] == '第一、二級用途別科目名稱及編號' and $type_line['rows'][$idx + 1][0] == '') {
+                    $type_line['rows'][$idx + 2][0] = '';
+                    $type_line['rows'][$idx + 1][0] = '第一、二級用途別科目名稱及編號';
+                }
+            }
+        }
+
+        // 處理全空白
+        foreach ($type_line['rows'] as $idx => $row) {
             if (implode('', $row) == '') {
                 unset($type_line['rows'][$idx]);
                 unset($type_line['organizations'][$idx]);
                 continue;
             }
         }
+
         $type_line['rows'] = array_values($type_line['rows']);
         $type_line['organizations'] = array_values($type_line['organizations']);
 
