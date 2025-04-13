@@ -61,7 +61,7 @@ class Parser
                 continue;
             }
             usort($boxes, function ($a, $b) {
-                if (abs($a['top'] - $b['top']) <= 7) {
+                if (abs($a['top'] - $b['top']) <= 8) {
                     return $a['left'] <=> $b['left'];
                 }
                 return $a['top'] <=> $b['top'] ?: $a['left'] <=> $b['left'];
@@ -203,7 +203,7 @@ class Parser
                     }
                     $black_index = null;
                     foreach ($vertical_black as $index => $x) {
-                        if ($left < $x) {
+                        if ($left < $x - 3) { // 多留一個 pixel ，有時文字會剛好壓到
                             $black_index = $index;
                             break;
                         }
