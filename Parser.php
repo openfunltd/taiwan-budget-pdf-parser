@@ -178,27 +178,26 @@ class Parser
             // 先一行一行抓到名稱與編號為止
             $header_text = '';
             $header_boxes = [];
+            if (in_array($type, [
+                '各項費用彙計表',
+                '各機關各項費用彙計表',
+            ])) {
+                // 如果是各項費用彙計表，要包含上面第一欄
+                $checking_top = $horizontal_black[0] ?? 0;
+            } else {
+                $checking_top = $horizontal_black[1] ?? 0;
+            }
             while (count($line_boxes)) {
                 $line_box = array_shift($line_boxes);
+                if ($line_box['top'] > $checking_top) {
+                    // 如果在黑線上面，表示是頁碼或是備註
+                    array_unshift($line_boxes, $line_box);
+                    break;
+                }
                 $line = $line_box['content'];
                 $header_text .= $line;
                 if (self::clean_space($line)) {
                     $header_boxes[] = $line;
-                }
-                
-                if (in_array($type, [
-                    '各項費用彙計表',
-                    '各機關各項費用彙計表',
-                ])) {
-                    // 如果是各項費用彙計表，就處理到單位之後
-                    if (strpos($line, '單位：') !== false) {
-                        break;
-                    }
-                } else {
-                    // 其他的話，就處理到名稱及編號為止
-                    if (strpos($line, '名稱及編號') !== false) {
-                        break;
-                    }
                 }
             }
             if (!$line_box) {
