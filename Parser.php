@@ -126,6 +126,19 @@ class Parser
                         if (count($vertical_black) and abs($x - $vertical_black[count($vertical_black) - 1] ?? 0) < 7) {
                             continue;
                         }
+                        $hit = 0;
+                        for ($y = 0; $y < imagesy($gd); $y++) {
+                            $color = imagecolorat($gd, $x, $y);
+                            $r = ($color >> 16) & 0xFF;
+                            $g = ($color >> 8) & 0xFF;
+                            $b = $color & 0xFF;
+                            if ($r < 100 && $g < 100 && $b < 100) {
+                                $hit++;
+                            }
+                        }
+                        if ($hit / imagesy($gd) < 0.5) {
+                            continue;
+                        }
                         $vertical_black[] = $x;
                     }
                 }
@@ -137,6 +150,19 @@ class Parser
                     $b = $color & 0xFF;
                     if ($r < 100 && $g < 100 && $b < 100) {
                         if (count($horizontal_black) and abs($y - $horizontal_black[count($horizontal_black) - 1] ?? 0) < 7) {
+                            continue;
+                        }
+                        $hit = 0;
+                        for ($x = 0; $x < imagesx($gd); $x ++) {
+                            $color = imagecolorat($gd, $x, $y);
+                            $r = ($color >> 16) & 0xFF;
+                            $g = ($color >> 8) & 0xFF;
+                            $b = $color & 0xFF;
+                            if ($r < 100 && $g < 100 && $b < 100) {
+                                $hit ++;
+                            }
+                        }
+                        if ($hit / imagesx($gd) < 0.8) {
                             continue;
                         }
                         $horizontal_black[] = $y;
