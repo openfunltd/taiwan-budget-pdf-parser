@@ -54,7 +54,7 @@ class Parser
                 $boxes[] = [
                     'top' => $matches[1],
                     'left' => $matches[2],
-                    'text' => $p_dom->textContent,
+                    'text' => self::getTextFromNode($p_dom, $doc),
                 ];
             }
             if (!$boxes) {
@@ -81,6 +81,7 @@ class Parser
                     $line_boxes[] = $line_box;
                     $line_box = [
                         'top' => $box['top'],
+                        'left' => $box['left'],
                         'boxes' => [],
                         'content' => '',
                     ];
@@ -99,6 +100,7 @@ class Parser
                 '歲出機關別預算表',
                 '各機關各項費用彙計表',
                 '各項費用彙計表',
+                '歲出計畫提要及分支計畫概況表',
             ];
             $type = null;
             foreach ($types as $t) {
@@ -173,11 +175,24 @@ class Parser
                 if (imagesx($gd) - $vertical_black[count($vertical_black) - 1] < 100) {
                     $vertical_black = array_slice($vertical_black, 1, count($vertical_black) - 2);
                 }
+                if ($type == '歲出計畫提要及分支計畫概況表') {
+                    // 表格比較複雜，另外處理
+                    $ret = self::parseHTML_歲出計畫提要及分支計畫概況表($gd, $line_boxes);
+                    if (!($type_lines[$type] ?? false)) {
+                        $type_lines[$type] = [];
+                    }
+                    $type_lines[$type][] = [
+                        'type' => $type,
+                        'page' => $page,
+                        'data' => $ret,
+                    ];
+                    continue;
+                }
             }
 
             // 先一行一行抓到名稱與編號為止
             $header_text = '';
-            $header_boxes = [];
+            $headLineer_boxes = [];
             if (in_array($type, [
                 '各項費用彙計表',
                 '各機關各項費用彙計表',
@@ -274,6 +289,256 @@ class Parser
         return $type_lines;
     }
 
+    public static function parseHTML_歲出計畫提要及分支計畫概況表($gd, $line_boxes)
+    {
+        // 這個表格的格式比較複雜，另外處理
+        $horizontal_black = [];
+        for ($y = 0; $y < imagesy($gd); $y++) {
+            $color = imagecolorat($gd, imagesx($gd) / 2, $y);
+            $r = ($color >> 16) & 0xFF;
+            $g = ($color >> 8) & 0xFF;
+            $b = $color & 0xFF;
+            if ($r < 100 && $g < 100 && $b < 100) {
+                if (count($horizontal_black) and abs($y - $horizontal_black[count($horizontal_black) - 1] ?? 0) < 7) {
+                    continue;
+                }
+                $hit = 0;
+                for ($x = 0; $x < imagesx($gd); $x ++) {
+                    $color = imagecolorat($gd, $x, $y);
+                    $r = ($color >> 16) & 0xFF;
+                    $g = ($color >> 8) & 0xFF;
+                    $b = $color & 0xFF;
+                    if ($r < 100 && $g < 100 && $b < 100) {
+                        $hit ++;
+                    }
+                }
+                if ($hit / imagesx($gd) < 0.8) {
+                    continue;
+                }
+                $horizontal_black[] = $y;
+            }
+        }
+
+        $areas = [];
+        foreach ($line_boxes as $line_box) {
+            $top = $line_box['top'];
+            for ($i = 0; $i < count($horizontal_black); $i ++) {
+                if ($top > $horizontal_black[$i]) {
+                    continue;
+                }
+                break;
+            }
+            if (!array_key_exists($i, $areas)) {
+                $areas[$i] = [];
+            }
+            $areas[$i][] = $line_box;
+        }
+
+        $ret = new StdClass;
+        // 最上面一區一定是單位名稱和表格名稱
+        $area = array_shift($areas);
+        foreach ($area as $idx => $line_box) {
+            if (strpos($line_box['content'], '歲出計畫提要及分支計畫概況表') === 0) {
+                $ret->unit = $area[$idx - 1]['content'];
+                break;
+            }
+        }
+
+        // 第二區一定是「工作計畫名稱及編號」和「預算金額」
+        $area = array_shift($areas);
+        if (!preg_match('#工作計畫名稱及編號(\d+)(.*)預算金額([0-9,]+)$#', $area[0]['content'], $matches)) {
+            print_r($area);
+            throw new Exception("找不到工作計畫名稱及編號");
+        }
+        $ret->工作計畫名稱 = trim($matches[2]);
+        $ret->工作計畫編號 = trim($matches[1]);
+        $ret->預算金額 = str_replace(',', '', $matches[3]);
+
+        // 如果有 5 條線表示有第三區，
+        if (count($horizontal_black) == 5) {
+            $area = array_shift($areas);
+            foreach ($area[0]['boxes'] as $box) {
+                $hit = false;
+                foreach (['計畫內容', '預期成果'] as $k) {
+                    if (strpos($box['text'], $k) !== false) {
+                        $hit = true;
+                        $ret->$k = explode('：', $box['text'], 2)[1];
+                        break;
+                    }
+                }
+                if (!$hit) {
+                    print_r($box);
+                    throw new Exception("找不到計畫內容或預期成果");
+                }
+            }
+        }
+
+        // 下一欄是欄位名稱
+        $area = array_shift($areas);
+        if (!in_array(self::clean_space($area[0]['content']), [
+            '分支計畫及用途別科目金額承辦單位說明',
+            '分支計畫及用途別科目預算金額承辦單位說明',
+        ])) {
+            print_r($area);
+            print_r(self::clean_space($area[0]['content']));
+            throw new Exception("找不到分支計畫及用途別科目金額承辦單位說明");
+        }
+        // 最後一欄是完整資料
+        $area = array_shift($areas);
+
+        // 先抓垂直線位置
+        $vertical_black = [];
+        if (count($horizontal_black) == 5) {
+            $edges = [$horizontal_black[2], $horizontal_black[4]];
+        } else {
+            $edges = [$horizontal_black[1], $horizontal_black[3]];
+        }
+
+        for ($x = 0; $x < imagesx($gd); $x++) {
+            $color = imagecolorat($gd, $x, floor(($edges[0] + $edges[1]) / 2));
+            $r = ($color >> 16) & 0xFF;
+            $g = ($color >> 8) & 0xFF;
+            $b = $color & 0xFF;
+            if ($r < 150 && $g < 150 && $b < 150) {
+                if (count($vertical_black) and abs($x - $vertical_black[count($vertical_black) - 1] ?? 0) < 7) {
+                    continue;
+                }
+                $hit = 0;
+                for ($y = $edges[0]; $y < $edges[1]; $y++) {
+                    $color = imagecolorat($gd, $x, $y);
+                    $r = ($color >> 16) & 0xFF;
+                    $g = ($color >> 8) & 0xFF;
+                    $b = $color & 0xFF;
+                    if ($r < 150 && $g < 150 && $b < 150) {
+                        $hit++;
+                    }
+                }
+                if ($hit / abs($edges[1] - $edges[0]) < 0.5) {
+                    continue;
+                }
+                $vertical_black[] = $x;
+            }
+        }
+
+        // 重新處理 boxes 排序，因為最後一欄說明和承辦單位的行高跟前面不一定一致
+        $td_groups = [
+            0 => [], // 分支計畫及用途別科目、金額
+            1 => [], // 承辦單位
+            2 => [], // 說明
+        ];
+        foreach ($area as $boxes) {
+            foreach ($boxes['boxes'] as $box) {
+                for ($i = 0; $i < count($vertical_black); $i ++) {
+                    if ($box['left'] > $vertical_black[$i]) {
+                        continue;
+                    }
+                    break;
+                }
+                // 如果 nbsp 在最前面，則表示是空白
+                $box['text'] = preg_replace_callback('#^(' . preg_quote(chr(0xc2) . chr(0xa0), '#') . ' ?)+#', function($matches) {
+                    return str_repeat(' ', strlen($matches[0]) - 1);
+                }, $box['text']);
+
+                if (strpos($box['text'], chr(0xc2) . chr(0xa0)) !== false) {
+                    foreach (explode(chr(0xc2) . chr(0xa0), $box['text']) as $idx => $text) {
+                        $tds[$i + $idx][] = $text;
+                    }
+                    continue;
+                }
+
+                if ($i < 2) {
+                    $td_groups[0][] = [$i, $box];
+                } elseif ($i == 2) {
+                    if (strpos($box['text'], chr(0xc2) . chr(0xa0)) !== false) {
+                        // 如果有 nbsp 在中間，表示會被拆成多行
+                        $box1 = $box;
+                        $box2 = $box;
+                        $box1['text'] = explode(chr(0xc2) . chr(0xa0), $box['text'])[0];
+                        $box2['text'] = explode(chr(0xc2) . chr(0xa0), $box['text'])[1];
+                        $td_groups[1][] = $box1;
+                        $td_groups[2][] = $box2;
+                    } else {
+                        $td_groups[1][] = $box;
+                    }
+                } else {
+                    $td_groups[2][] = $box;
+                }
+            }
+        }
+
+        usort($td_groups[0], function($a, $b) {
+            // 如果 top 在 7px 內，看 left
+            if (abs($a[1]['top'] - $b[1]['top']) <= 7) {
+                return $a[1]['left'] <=> $b[1]['left'];
+            }
+            return $a[1]['top'] <=> $b[1]['top'];
+        });
+
+        $main_plan_top = [];
+        // 先將分支計畫及用途別科目、金額的資料整理好
+        
+        $lines = [];
+        foreach ($td_groups[0] as $td) {
+            if ($td[0] == 0 and preg_match('#^(\d+)#', $td[1]['text'], $matches)) {
+                $main_plan_top[$matches[1]] = $td[1]['top'];
+            }
+            if (count($lines) == 0) {
+                $lines[] = [$td];
+            } else {
+                $last_line = $lines[count($lines) - 1];
+                if (abs($last_line[count($last_line) - 1][1]['top'] - $td[1]['top']) <= 7) {
+                    $lines[count($lines) - 1][] = $td;
+                } else {
+                    $lines[] = [$td];
+                }
+            }
+        }
+        $ret->lines = $lines;
+        $ret->承辦單位 = [];
+        $ret->說明 = [];
+
+        foreach ($td_groups[1] as $td) {
+            $main_plan_id = 'miss';
+            foreach ($main_plan_top as $plan_id => $top) {
+                if ($td['top'] < $top - 7) {
+                    break;
+                }
+                $main_plan_id = $plan_id;
+            }
+            if (!$ret->承辦單位) {
+                $ret->承辦單位[] = [$main_plan_id, [$td]];
+            } else {
+                $last_line = $ret->承辦單位[count($ret->承辦單位) - 1];
+                if ($last_line[0] == $main_plan_id) {
+                    $ret->承辦單位[count($ret->承辦單位) - 1][1][] = $td;
+                } else {
+                    $ret->承辦單位[] = [$main_plan_id, [$td]];
+                }
+            }
+        }
+
+        foreach ($td_groups[2] as $td) {
+            $main_plan_id = 'miss';
+            foreach ($main_plan_top as $plan_id => $top) {
+                if ($td['top'] < $top - 7) {
+                    break;
+                }
+                $main_plan_id = $plan_id;
+            }
+            if (!$ret->說明) {
+                $ret->說明[] = [$main_plan_id, [$td]];
+            } else {
+                $last_line = $ret->說明[count($ret->說明) - 1];
+                if ($last_line[0] == $main_plan_id) {
+                    $ret->說明[count($ret->說明) - 1][1][] = $td;
+                } else {
+                    $ret->說明[] = [$main_plan_id, [$td]];
+                }
+            }
+        }
+        return $ret;
+    }
+
     public static function outputData($cols, $values)
     {
         return array_combine($cols, array_map(function($c) use ($values){
@@ -286,6 +551,162 @@ class Parser
         $s = str_replace('　', '', $s);
         $s = str_replace(" ", '', $s);
         return $s;
+    }
+
+    public static function parse歲出計畫提要及分支計畫概況表($type_line, $callback, $type)
+    {
+        $plans = [];
+        $id_說明 = null;
+        $id_承辦單位 = null;
+        foreach ($type_line as $page) {
+            $data = $page['data'];
+            if ($data->工作計畫名稱 ?? false) {
+                $callback('工作計畫', [
+                    '單位' => $data->unit,
+                    '工作計畫編號' => $data->工作計畫編號,
+                    '工作計畫名稱' => $data->工作計畫名稱,
+                    '預算金額' => $data->預算金額,
+                    '計畫內容' => trim($data->計畫內容 ?? ''),
+                    '預期成果' => trim($data->預期成果 ?? ''),
+                ], $page['page']);
+                $plan_id = $data->工作計畫編號;
+                if (!($plans[$plan_id] ?? false)) {
+                    $plans[$plan_id] = [
+                        'lines' => [],
+                        '承辦單位' => [],
+                        '說明' => [],
+                    ];
+                }
+            }
+
+            foreach ($page['data']->lines as $lines) {
+                $plans[$plan_id]['lines'][] = $lines;
+            }
+
+            foreach ($page['data']->承辦單位 as $line) {
+                list($unit_id, $tds) = $line;
+                if ($unit_id == 'miss') {
+                    $unit_id = $id_承辦單位;
+                    $plans[$plan_id]['承辦單位'][$unit_id] .= implode('', array_map(function($td) {
+                        return $td['text'];
+                    }, $tds));
+                } else {
+                    $id_承辦單位 = $unit_id;
+                    $plans[$plan_id]['承辦單位'][$unit_id] = implode('', array_map(function($td) {
+                        return $td['text'];
+                    }, $tds));
+                }
+            }
+
+            foreach ($page['data']->說明 as $line) {
+                list($id, $tds) = $line;
+                if ($id == 'miss') {
+                    $id = $id_說明;
+                    $plans[$plan_id]['說明'][$id] .= "\n" . implode("\n", array_map(function($td) {
+                        return $td['text'];
+                    }, $tds));
+                } else {
+                    $id_說明 = $id;
+                    $plans[$plan_id]['說明'][$id] = implode("\n", array_map(function($td) {
+                        return $td['text'];
+                    }, $tds));
+                }
+            }
+        }
+
+        foreach ($plans as $plan_id => $plan_data) {
+            $ret = new StdClass;
+            $ret->分支計劃 = new StdClass;
+
+            $plan_id = null;
+            $plan_name = null;
+            $main_plan_id = null;
+            $parent_plan_id_stack = [];
+            $name_width = null;
+
+            foreach ($plan_data['lines'] as $tds) {
+                $tds[0][1]['text'] = str_replace('　', '  ', $tds[0][1]['text']);
+                if (preg_match('#^(\s*)(\d+)$#', $tds[0][1]['text'], $matches)) {
+                    $plan_id = $matches[2];
+                    $plan_name = trim($tds[1][1]['text']);
+                    $amount = str_replace(',', '', $tds[2][1]['text']);
+                } elseif (preg_match('#^(\s*)(\d+)(.*)$#', $tds[0][1]['text'], $matches)) {
+                    $plan_id = $matches[2];
+                    $plan_name = trim($matches[3]);
+                    $amount = str_replace(',', '', $tds[1][1]['text']);
+                } else {
+                    print_r($tds);
+                    throw new Exception("找不到計畫編號");
+                }
+                $space = $matches[1];
+                if ($space == '') {
+                    $main_plan_id = $plan_id;
+                    $parent_plan_id_stack = [$plan_id];
+                } else if ($name_width == strlen($space)) {
+                    // 如果空格數沒有變，則表示 parent_plan_id 沒有變
+                } else if ($name_width > strlen($space)) {
+                    // 如果空格數變少，則表示 parent_plan_id 變了
+                    array_pop($parent_plan_id_stack);
+                } else {
+                    // 如果空格數變多，則表示 parent_plan_id 變了
+                    $parent_plan_id_stack[] = $plan_id;
+                }
+                $name_width = strlen($space);
+
+                if (is_null($plan_id)) {
+                    throw new Exception("找不到計畫名稱及編號");
+                }
+
+                if (!($ret->分支計劃->{$plan_id} ?? false)) {
+                    $ret->分支計劃->{$plan_id} = new StdClass;
+                    $ret->分支計劃->{$plan_id}->編號 = $plan_id;
+                    $ret->分支計劃->{$plan_id}->科目 = $plan_name;
+                    if ($main_plan_id == $plan_id) {
+                        $ret->分支計劃->{$plan_id}->承辦單位 = '';
+                        $ret->分支計劃->{$plan_id}->說明 = '';
+                    } else {
+                        $ret->分支計劃->{$plan_id}->母科目= $parent_plan_id_stack[count($parent_plan_id_stack) - 2];
+                    }
+                }
+
+                $ret->分支計劃->{$plan_id}->金額 = $amount;
+            }
+            foreach ($plan_data['承辦單位'] as $main_plan_id => $text) {
+                if (!($ret->分支計劃->{$main_plan_id} ?? false)) {
+                    print_r($plan_data);
+                    throw new Exception("找不到計畫編號");
+                }
+                $ret->分支計劃->{$main_plan_id}->承辦單位 = $text;
+            }
+            foreach ($plan_data['說明'] as $main_plan_id => $text) {
+                $ret->分支計劃->{$main_plan_id}->說明 = $text;
+            }
+
+            foreach ($ret->分支計劃 as $plan_id => $plan_data) {
+                if ($plan_data->母科目 ?? false) {
+                    $callback('子分支計劃', [
+                        '單位' => $data->unit,
+                        '工作計畫編號' => $data->工作計畫編號,
+                        '工作計畫名稱' => $data->工作計畫名稱,
+                        '分支計畫編號' => $plan_data->編號,
+                        '分支計畫名稱' => $plan_data->科目,
+                        '母科目編號' => $plan_data->母科目,
+                        '金額' => $plan_data->金額,
+                    ], $page['page']);
+                } else {
+                    $callback('分支計劃', [
+                        '單位' => $data->unit,
+                        '工作計畫編號' => $data->工作計畫編號,
+                        '工作計畫名稱' => $data->工作計畫名稱,
+                        '分支計畫編號' => $plan_data->編號,
+                        '分支計畫名稱' => $plan_data->科目,
+                        '金額' => $plan_data->金額,
+                        '承辦單位' => $plan_data->承辦單位,
+                        '說明' => $plan_data->說明,
+                    ], $page['page']);
+                }
+            }
+        }
     }
 
     public static function parse各項費用彙計表($type_line, $callback, $type)
@@ -549,6 +970,12 @@ class Parser
                 return self::parse各項費用彙計表($type_line, $callback, $type);
             }
 
+            if (in_array($type, [
+                '歲出計畫提要及分支計畫概況表',
+            ])) {
+                return self::parse歲出計畫提要及分支計畫概況表($type_line, $callback, $type);
+            }
+
             // 如果前面整行只有說明，就刪掉
             if (self::clean_space(implode('', $type_line['rows'][0])) == '說明') {
                 array_shift($type_line['rows']);
@@ -759,5 +1186,26 @@ class Parser
                 throw new Exception("沒有符合的行");
             }
         }
+    }
+
+    public static function getTextFromNode($node, $doc)
+    {
+        if (in_array($node->nodeName, ['p', 'b'])) {
+            $t = '';
+            foreach ($node->childNodes as $cnode) {
+                $t .= self::getTextFromNode($cnode, $doc);
+            }
+            return $t;
+        }
+
+        if ('#text' == $node->nodeName) {
+            return $node->textContent;
+        }
+
+        if ('br' == $node->nodeName) {
+            return "\n";
+        }
+        print_r($doc->saveHTML($node));
+        exit;
     }
 }
