@@ -676,8 +676,19 @@ class Parser
                     $plan_id = $matches[2];
                     $plan_name = trim($matches[3]);
                     $amount = str_replace(',', '', $tds[1][1]['text']);
+                } elseif (mb_strlen($plan_name) >= 11 or in_array("{$plan_id}-{$plan_name}", [
+                    '12-跨領域大樓基本行政工作維持',
+                    '04-關鍵基礎設施防護運作展示介',
+                    '04-辦理縣市政府新聞聯繫及輿情',
+                    '03-政府內部控制監督機制規劃及',
+                    '02-地方政府主計業務之督導與查',
+                    '04-地方政府公務統計業務之推動',
+                ])) {
+                    // 遇到斷行的部份全部條列出來白名單處理，以防止誤判
+                    $plan_name .= trim($tds[0][1]['text']);
                 } else {
                     print_r($tds);
+                    print_r("{$plan_id}-{$plan_name}");
                     throw new Exception("找不到計畫編號");
                 }
                 $space = $matches[1];
