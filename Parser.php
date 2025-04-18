@@ -353,24 +353,41 @@ class Parser
         $ret->工作計畫名稱 = trim($matches[2]);
         $ret->工作計畫編號 = trim($matches[1]);
         $ret->預算金額 = str_replace(',', '', $matches[3]);
+        $ret->計畫內容 = [];
 
         // 如果有 5 條線表示有第三區，
-        if (count($horizontal_black) == 5) {
+        if (count($horizontal_black) == 3 or count($horizontal_black) == 5) {
             $area = array_shift($areas);
+            // 計畫內容區最多只會有兩欄，通常左邊是計畫內容，右邊是預期成果
+            $showed_pos = [];
             foreach ($area[0]['boxes'] as $box) {
-                $hit = false;
-                foreach (['計畫內容', '預期成果'] as $k) {
-                    if (strpos($box['text'], $k) !== false) {
-                        $hit = true;
-                        $ret->$k = explode('：', $box['text'], 2)[1];
-                        break;
-                    }
+                $pos = $box['left'] . '-' . $box['top'];
+                if ($showed_pos[$pos] ?? false) {
+                    continue;
                 }
-                if (!$hit) {
-                    print_r($box);
-                    throw new Exception("找不到計畫內容或預期成果");
+                $showed_pos[$pos] = true;
+                if ($box['left'] < imagesx($gd) / 2) {
+                    if ($ret->計畫內容[0] ?? false) {
+                        print_r($box);
+                        throw new Exception("計畫內容有兩欄");
+                    }
+                    $ret->計畫內容[0] = $box['text'];
+                } else {
+                    if ($ret->計畫內容[1] ?? false) {
+                        print_r($box);
+                        throw new Exception("計畫內容有兩欄");
+                    }
+                    $ret->計畫內容[1] = $box['text'];
                 }
             }
+            if (count($horizontal_black) == 3) {
+                // 如果只有三欄直接結束
+                return $ret;
+            }
+        } else if (count($horizontal_black) == 4) {
+        } else {
+            print_r($horizontal_black);
+            throw new Exception("TODO: 找不到計畫內容或預期成果");
         }
 
         // 下一欄是欄位名稱
@@ -561,21 +578,27 @@ class Parser
         foreach ($type_line as $page) {
             $data = $page['data'];
             if ($data->工作計畫名稱 ?? false) {
-                $callback('工作計畫', [
-                    '單位' => $data->unit,
-                    '工作計畫編號' => $data->工作計畫編號,
-                    '工作計畫名稱' => $data->工作計畫名稱,
-                    '預算金額' => $data->預算金額,
-                    '計畫內容' => trim($data->計畫內容 ?? ''),
-                    '預期成果' => trim($data->預期成果 ?? ''),
-                ], $page['page']);
                 $plan_id = $data->工作計畫編號;
                 if (!($plans[$plan_id] ?? false)) {
                     $plans[$plan_id] = [
+                        '單位' => $data->unit,
+                        '工作計畫編號' => $data->工作計畫編號,
+                        '工作計畫名稱' => $data->工作計畫名稱,
+                        '預算金額' => $data->預算金額,
+                        '計畫內容' => trim($data->計畫內容[0] ?? ''),
+                        '預期成果' => trim($data->計畫內容[1] ?? ''),
+                        'page' => $page['page'],
                         'lines' => [],
                         '承辦單位' => [],
                         '說明' => [],
                     ];
+                } else {
+                    if ($data->計畫內容[0] ?? false) {
+                        $plans[$plan_id]['計畫內容'] .= "\n" . trim($data->計畫內容[0]);
+                    }
+                    if ($data->計畫內容[1] ?? false) {
+                        $plans[$plan_id]['預期成果'] .= "\n" . trim($data->計畫內容[1]);
+                    }
                 }
             }
 
@@ -615,6 +638,25 @@ class Parser
         }
 
         foreach ($plans as $plan_id => $plan_data) {
+            if (strpos($plan_data['計畫內容'], '計畫內容：') !== 0) {
+                print_r($plan_data['計畫內容']);
+                throw new Exception("計畫內容格式錯誤");
+            }
+            if (strpos($plan_data['預期成果'], '預期成果：') !== 0) {
+                print_r($plan_data['預期成果']);
+                throw new Exception("預期成果格式錯誤");
+            }
+            $plan_data['計畫內容'] = trim(substr($plan_data['計畫內容'], strlen('計畫內容：')));
+            $plan_data['預期成果'] = trim(substr($plan_data['預期成果'], strlen('預期成果：')));
+
+            $callback('工作計畫', [
+                '單位' => $plan_data['單位'],
+                '工作計畫編號' => $plan_data['工作計畫編號'],
+                '工作計畫名稱' => $plan_data['工作計畫名稱'],
+                '預算金額' => $plan_data['預算金額'],
+                '計畫內容' => $plan_data['計畫內容'],
+                '預期成果' => $plan_data['預期成果'],
+            ], $plan_data['page']);
             $ret = new StdClass;
             $ret->分支計劃 = new StdClass;
 
@@ -682,27 +724,27 @@ class Parser
                 $ret->分支計劃->{$main_plan_id}->說明 = $text;
             }
 
-            foreach ($ret->分支計劃 as $plan_id => $plan_data) {
-                if ($plan_data->母科目 ?? false) {
+            foreach ($ret->分支計劃 as $plan_id => $sub_plan_data) {
+                if ($sub_plan_data->母科目 ?? false) {
                     $callback('子分支計劃', [
-                        '單位' => $data->unit,
-                        '工作計畫編號' => $data->工作計畫編號,
-                        '工作計畫名稱' => $data->工作計畫名稱,
-                        '分支計畫編號' => $plan_data->編號,
-                        '分支計畫名稱' => $plan_data->科目,
-                        '母科目編號' => $plan_data->母科目,
-                        '金額' => $plan_data->金額,
+                        '單位' => $plan_data['單位'],
+                        '工作計畫編號' => $plan_data['工作計畫編號'],
+                        '工作計畫名稱' => $plan_data['工作計畫名稱'],
+                        '分支計畫編號' => $sub_plan_data->編號,
+                        '分支計畫名稱' => $sub_plan_data->科目,
+                        '母科目編號' => $sub_plan_data->母科目,
+                        '金額' => $sub_plan_data->金額,
                     ], $page['page']);
                 } else {
                     $callback('分支計劃', [
-                        '單位' => $data->unit,
-                        '工作計畫編號' => $data->工作計畫編號,
-                        '工作計畫名稱' => $data->工作計畫名稱,
-                        '分支計畫編號' => $plan_data->編號,
-                        '分支計畫名稱' => $plan_data->科目,
-                        '金額' => $plan_data->金額,
-                        '承辦單位' => $plan_data->承辦單位,
-                        '說明' => $plan_data->說明,
+                        '單位' => $plan_data['單位'],
+                        '工作計畫編號' => $plan_data['工作計畫編號'],
+                        '工作計畫名稱' => $plan_data['工作計畫名稱'],
+                        '分支計畫編號' => $sub_plan_data->編號,
+                        '分支計畫名稱' => $sub_plan_data->科目,
+                        '金額' => $sub_plan_data->金額,
+                        '承辦單位' => $sub_plan_data->承辦單位,
+                        '說明' => $sub_plan_data->說明,
                     ], $page['page']);
                 }
             }
@@ -1205,6 +1247,10 @@ class Parser
         if ('br' == $node->nodeName) {
             return "\n";
         }
+        if ('a' == $node->nodeName) {
+            return $node->textContent;
+        }
+        echo "不知道的內容: ";
         print_r($doc->saveHTML($node));
         exit;
     }
