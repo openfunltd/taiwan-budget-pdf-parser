@@ -1243,7 +1243,7 @@ class Parser
 
     public static function getTextFromNode($node, $doc)
     {
-        if (in_array($node->nodeName, ['p', 'b'])) {
+        if (in_array($node->nodeName, ['p', 'b', 'a', 'i'])) {
             $t = '';
             foreach ($node->childNodes as $cnode) {
                 $t .= self::getTextFromNode($cnode, $doc);
@@ -1257,9 +1257,6 @@ class Parser
 
         if ('br' == $node->nodeName) {
             return "\n";
-        }
-        if ('a' == $node->nodeName) {
-            return $node->textContent;
         }
         echo "不知道的內容: ";
         print_r($doc->saveHTML($node));
