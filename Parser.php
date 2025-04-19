@@ -495,9 +495,13 @@ class Parser
         // 先將分支計畫及用途別科目、金額的資料整理好
         
         $lines = [];
+        $prev_top = 0;
         foreach ($td_groups[0] as $td) {
             if ($td[0] == 0 and preg_match('#^(\d+)#', $td[1]['text'], $matches)) {
-                $main_plan_top[$matches[1]] = $td[1]['top'];
+                if (abs($prev_top - $td[1]['top']) > 7) {
+                    $main_plan_top[$matches[1]] = $td[1]['top'];
+                    $prev_top = $td[1]['top'];
+                }
             }
             if (count($lines) == 0) {
                 $lines[] = [$td];
@@ -567,11 +571,13 @@ class Parser
         $s = str_replace(' ', '', $s);
         $s = str_replace('　', '', $s);
         $s = str_replace(" ", '', $s);
+        $s = str_replace("\n", '', $s);
         return $s;
     }
 
     public static function parse歲出計畫提要及分支計畫概況表($type_line, $callback, $type)
     {
+        file_put_contents(__DIR__ . "/tmp.json", json_encode($type_line, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
         $plans = [];
         $id_說明 = null;
         $id_承辦單位 = null;
@@ -676,7 +682,7 @@ class Parser
                     $plan_id = $matches[2];
                     $plan_name = trim($matches[3]);
                     $amount = str_replace(',', '', $tds[1][1]['text']);
-                } elseif (mb_strlen($plan_name) >= 11 or in_array("{$plan_id}-{$plan_name}", [
+                } elseif (mb_strlen($plan_name) >= 9 or in_array("{$plan_id}-{$plan_name}", [
                     '12-跨領域大樓基本行政工作維持',
                     '04-關鍵基礎設施防護運作展示介',
                     '04-辦理縣市政府新聞聯繫及輿情',
@@ -727,7 +733,7 @@ class Parser
             foreach ($plan_data['承辦單位'] as $main_plan_id => $text) {
                 if (!($ret->分支計劃->{$main_plan_id} ?? false)) {
                     print_r($plan_data);
-                    throw new Exception("找不到計畫編號");
+                    throw new Exception("找不到計畫編號: {$main_plan_id}");
                 }
                 $ret->分支計劃->{$main_plan_id}->承辦單位 = $text;
             }
