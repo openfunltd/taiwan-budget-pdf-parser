@@ -583,10 +583,11 @@ class Parser
         $id_承辦單位 = null;
         foreach ($type_line as $page) {
             $data = $page['data'];
+            $plan_id = $data->工作計畫編號;
+            $full_plan_id = "{$data->unit}-{$plan_id}";
             if ($data->工作計畫名稱 ?? false) {
-                $plan_id = $data->工作計畫編號;
-                if (!($plans[$plan_id] ?? false)) {
-                    $plans[$plan_id] = [
+                if (!($plans[$full_plan_id] ?? false)) {
+                    $plans[$full_plan_id] = [
                         '單位' => $data->unit,
                         '工作計畫編號' => $data->工作計畫編號,
                         '工作計畫名稱' => $data->工作計畫名稱,
@@ -600,28 +601,28 @@ class Parser
                     ];
                 } else {
                     if ($data->計畫內容[0] ?? false) {
-                        $plans[$plan_id]['計畫內容'] .= "\n" . trim($data->計畫內容[0]);
+                        $plans[$full_plan_id]['計畫內容'] .= "\n" . trim($data->計畫內容[0]);
                     }
                     if ($data->計畫內容[1] ?? false) {
-                        $plans[$plan_id]['預期成果'] .= "\n" . trim($data->計畫內容[1]);
+                        $plans[$full_plan_id]['預期成果'] .= "\n" . trim($data->計畫內容[1]);
                     }
                 }
             }
 
             foreach ($page['data']->lines as $lines) {
-                $plans[$plan_id]['lines'][] = $lines;
+                $plans[$full_plan_id]['lines'][] = $lines;
             }
 
             foreach ($page['data']->承辦單位 as $line) {
                 list($unit_id, $tds) = $line;
                 if ($unit_id == 'miss') {
                     $unit_id = $id_承辦單位;
-                    $plans[$plan_id]['承辦單位'][$unit_id] .= implode('', array_map(function($td) {
+                    $plans[$full_plan_id]['承辦單位'][$unit_id] .= implode('', array_map(function($td) {
                         return $td['text'];
                     }, $tds));
                 } else {
                     $id_承辦單位 = $unit_id;
-                    $plans[$plan_id]['承辦單位'][$unit_id] = implode('', array_map(function($td) {
+                    $plans[$full_plan_id]['承辦單位'][$unit_id] = implode('', array_map(function($td) {
                         return $td['text'];
                     }, $tds));
                 }
@@ -631,19 +632,19 @@ class Parser
                 list($id, $tds) = $line;
                 if ($id == 'miss') {
                     $id = $id_說明;
-                    $plans[$plan_id]['說明'][$id] .= "\n" . implode("\n", array_map(function($td) {
+                    $plans[$full_plan_id]['說明'][$id] .= "\n" . implode("\n", array_map(function($td) {
                         return $td['text'];
                     }, $tds));
                 } else {
                     $id_說明 = $id;
-                    $plans[$plan_id]['說明'][$id] = implode("\n", array_map(function($td) {
+                    $plans[$full_plan_id]['說明'][$id] = implode("\n", array_map(function($td) {
                         return $td['text'];
                     }, $tds));
                 }
             }
         }
 
-        foreach ($plans as $plan_id => $plan_data) {
+        foreach ($plans as $plan_data) {
             if (strpos($plan_data['計畫內容'], '計畫內容：') !== 0) {
                 print_r($plan_data['計畫內容']);
                 throw new Exception("計畫內容格式錯誤");
