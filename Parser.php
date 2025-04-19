@@ -172,7 +172,7 @@ class Parser
                 }
 
                 // 如果最右邊一條線距離右邊太近，表示可能是縣市格式，把最左右邊線拿掉
-                if (imagesx($gd) - $vertical_black[count($vertical_black) - 1] < 100) {
+                if (count($vertical_black) and (imagesx($gd) - $vertical_black[count($vertical_black) - 1] < 100)) {
                     $vertical_black = array_slice($vertical_black, 1, count($vertical_black) - 2);
                 }
                 if ($type == '歲出計畫提要及分支計畫概況表') {
@@ -340,6 +340,7 @@ class Parser
         foreach ($area as $idx => $line_box) {
             if (strpos($line_box['content'], '歲出計畫提要及分支計畫概況表') === 0) {
                 $ret->unit = $area[$idx - 1]['content'];
+                $ret->unit = preg_replace('#\(\d+\)-\d+#', '', $ret->unit);
                 break;
             }
         }
@@ -646,7 +647,7 @@ class Parser
 
         foreach ($plans as $plan_data) {
             if (strpos($plan_data['計畫內容'], '計畫內容：') !== 0) {
-                print_r($plan_data['計畫內容']);
+                print_r($plan_data);
                 throw new Exception("計畫內容格式錯誤");
             }
             if (strpos($plan_data['預期成果'], '預期成果：') !== 0) {
@@ -679,10 +680,12 @@ class Parser
                     $plan_id = $matches[2];
                     $plan_name = trim($tds[1][1]['text']);
                     $amount = str_replace(',', '', $tds[2][1]['text']);
+                    $space = $matches[1];
                 } elseif (preg_match('#^(\s*)(\d+)(.*)$#', $tds[0][1]['text'], $matches)) {
                     $plan_id = $matches[2];
                     $plan_name = trim($matches[3]);
                     $amount = str_replace(',', '', $tds[1][1]['text']);
+                    $space = $matches[1];
                 } elseif (mb_strlen($plan_name) >= 9 or in_array("{$plan_id}-{$plan_name}", [
                     '12-跨領域大樓基本行政工作維持',
                     '04-關鍵基礎設施防護運作展示介',
@@ -698,7 +701,6 @@ class Parser
                     print_r("{$plan_id}-{$plan_name}");
                     throw new Exception("找不到計畫編號");
                 }
-                $space = $matches[1];
                 if ($space == '') {
                     $main_plan_id = $plan_id;
                     $parent_plan_id_stack = [$plan_id];
