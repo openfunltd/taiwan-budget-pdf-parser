@@ -1014,13 +1014,13 @@ class Parser
     {
         $cols = [
             '歲入來源別預算表' => [
-                '款', '項', '目', '節', '編號', '款名', '項名', '目名', '節名', '本年度預算數', '上年度預算數', '前年度決算數', '本年度與上年度比較', '說明',
+                '單位', '款', '項', '目', '節', '編號', '款名', '項名', '目名', '節名', '本年度預算數', '上年度預算數', '前年度決算數', '本年度與上年度比較', '說明',
             ],
             '歲出機關別預算表' => [
-                '款', '項', '目', '節', '編號', '款名', '項名', '目名', '節名', '本年度預算數', '上年度預算數', '前年度決算數', '本年度與上年度比較', '說明',
+                '單位', '款', '項', '目', '節', '編號', '款名', '項名', '目名', '節名', '本年度預算數', '上年度預算數', '前年度決算數', '本年度與上年度比較', '說明',
             ],
             '歲出政事別預算表' => [
-                '款', '項', '目', '節', '編號', '款名', '項名', '目名', '節名', '本年度預算數', '上年度預算數', '前年度決算數', '本年度與上年度比較',
+                '單位', '款', '項', '目', '節', '編號', '款名', '項名', '目名', '節名', '本年度預算數', '上年度預算數', '前年度決算數', '本年度與上年度比較',
             ],
         ];
 
@@ -1074,7 +1074,9 @@ class Parser
                         $callback($type, self::outputData($cols[$type], $values), $type_line['page']);
                     }
                     $values = [
+                        '單位' => $organization,
                         '款名' => self::clean_space($row[4]),
+                        '編號' => 'total',
                         '說明' => '',
                         '本年度預算數' => str_replace(',', '', $row[5]),
                         '上年度預算數' => str_replace(',', '', $row[6]),
@@ -1107,6 +1109,7 @@ class Parser
                             $callback($type, self::outputData($cols[$type], $values), $type_line['page']);
                         }
                         $values = [
+                            '單位' => $organization,
                             '編號' => self::clean_space($matches[1]),
                             '款' => $prev_values['款'] ?? '',
                             '款名' => $prev_values['款名'] ?? '',
@@ -1127,6 +1130,7 @@ class Parser
                             $callback($type, self::outputData($cols[$type], $values), $type_line['page']);
                         }
                         $values = [
+                            '單位' => $organization,
                             '編號' => $matches[1],
                             '說明' => '',
                             '款' => $prev_values['款'] ?? '',
@@ -1143,7 +1147,7 @@ class Parser
                 }
 
                 if ($row[0] != '' and $row[4] != '') {
-                    $values['款'] = $row[0];
+                    $values['款'] = self::clean_space($row[0]);
                     $values['款名'] = $row[4];
                     $values['項'] = '';
                     $values['項名'] = '';
@@ -1155,7 +1159,7 @@ class Parser
                 }
 
                 if ($row[1] != '' and $row[4] != '') {
-                    $values['項'] = $row[1];
+                    $values['項'] = self::clean_space($row[1]);
                     $values['項名'] = $row[4];
                     $values['目'] = '';
                     $values['目名'] = '';
@@ -1165,7 +1169,7 @@ class Parser
                 }
 
                 if ($row[2] != '' and $row[4] != '') {
-                    $values['目'] = $row[2];
+                    $values['目'] = self::clean_space($row[2]);
                     $values['目名'] = $row[4];
                     $values['節'] = '';
                     $values['節名'] = '';
@@ -1173,7 +1177,7 @@ class Parser
                 }
 
                 if ($row[3] != '' and $row[4] != '') {
-                    $values['節'] = $row[3];
+                    $values['節'] = self::clean_space($row[3]);
                     $values['節名'] = $row[4];
                     $row[3] = $row[4] = '';
                 }
