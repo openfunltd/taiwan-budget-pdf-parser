@@ -23,6 +23,7 @@ class Parser
         $type_lines = [];
         $page_showed = [];
         foreach ($contents as $html_content) {
+            $header_boxes = [];
             if (!$html_content) {
                 continue;
             }
@@ -33,6 +34,9 @@ class Parser
             if (array_key_exists($page, $page_showed)) {
                 continue;
             }
+            // 處理異體字
+            $html_content = str_replace('年', '年', $html_content);
+            $html_content = str_replace('度', '度', $html_content);
             $page_showed[$page] = true;
 
             //error_log("Page: $page");
@@ -114,6 +118,7 @@ class Parser
             }
 
             $backgroup_image = null;
+            $color_threshold = 100;
             if (preg_match('#<img .* src="([^"]+)" alt="background image"#', $html_content, $matches)) {
                 $backgroup_image = $matches[1];
                 $gd = imagecreatefrompng(dirname($file) . "/" . $backgroup_image);
@@ -124,7 +129,7 @@ class Parser
                     $r = ($color >> 16) & 0xFF;
                     $g = ($color >> 8) & 0xFF;
                     $b = $color & 0xFF;
-                    if ($r < 100 && $g < 100 && $b < 100) {
+                    if (max($r, $g, $b) < $color_threshold) {
                         if (count($vertical_black) and abs($x - $vertical_black[count($vertical_black) - 1] ?? 0) < 7) {
                             continue;
                         }
@@ -134,7 +139,7 @@ class Parser
                             $r = ($color >> 16) & 0xFF;
                             $g = ($color >> 8) & 0xFF;
                             $b = $color & 0xFF;
-                            if ($r < 100 && $g < 100 && $b < 100) {
+                            if (max($r, $g, $b) < $color_threshold) {
                                 $hit++;
                             }
                         }
@@ -150,7 +155,7 @@ class Parser
                     $r = ($color >> 16) & 0xFF;
                     $g = ($color >> 8) & 0xFF;
                     $b = $color & 0xFF;
-                    if ($r < 100 && $g < 100 && $b < 100) {
+                    if (max($r, $g, $b) < $color_threshold) {
                         if (count($horizontal_black) and abs($y - $horizontal_black[count($horizontal_black) - 1] ?? 0) < 7) {
                             continue;
                         }
@@ -160,7 +165,7 @@ class Parser
                             $r = ($color >> 16) & 0xFF;
                             $g = ($color >> 8) & 0xFF;
                             $b = $color & 0xFF;
-                            if ($r < 100 && $g < 100 && $b < 100) {
+                            if (max($r, $g, $b) < $color_threshold) {
                                 $hit ++;
                             }
                         }
@@ -298,7 +303,8 @@ class Parser
             $r = ($color >> 16) & 0xFF;
             $g = ($color >> 8) & 0xFF;
             $b = $color & 0xFF;
-            if ($r < 100 && $g < 100 && $b < 100) {
+            $color_threshold = 190;
+            if (max($r, $g, $b) < $color_threshold) {
                 if (count($horizontal_black) and abs($y - $horizontal_black[count($horizontal_black) - 1] ?? 0) < 7) {
                     continue;
                 }
@@ -308,7 +314,7 @@ class Parser
                     $r = ($color >> 16) & 0xFF;
                     $g = ($color >> 8) & 0xFF;
                     $b = $color & 0xFF;
-                    if ($r < 100 && $g < 100 && $b < 100) {
+                    if (max($r, $g, $b) < $color_threshold) {
                         $hit ++;
                     }
                 }
@@ -417,7 +423,7 @@ class Parser
             $r = ($color >> 16) & 0xFF;
             $g = ($color >> 8) & 0xFF;
             $b = $color & 0xFF;
-            if ($r < 150 && $g < 150 && $b < 150) {
+            if (max($r, $g, $b) < $color_threshold) {
                 if (count($vertical_black) and abs($x - $vertical_black[count($vertical_black) - 1] ?? 0) < 7) {
                     continue;
                 }
@@ -427,7 +433,7 @@ class Parser
                     $r = ($color >> 16) & 0xFF;
                     $g = ($color >> 8) & 0xFF;
                     $b = $color & 0xFF;
-                    if ($r < 150 && $g < 150 && $b < 150) {
+                    if (max($r, $g, $b) < $color_threshold) {
                         $hit++;
                     }
                 }
@@ -457,13 +463,6 @@ class Parser
                     return str_repeat(' ', strlen($matches[0]) - 1);
                 }, $box['text']);
 
-                if (strpos($box['text'], chr(0xc2) . chr(0xa0)) !== false) {
-                    foreach (explode(chr(0xc2) . chr(0xa0), $box['text']) as $idx => $text) {
-                        $tds[$i + $idx][] = $text;
-                    }
-                    continue;
-                }
-
                 if ($i < 2) {
                     $td_groups[0][] = [$i, $box];
                 } elseif ($i == 2) {
@@ -472,6 +471,7 @@ class Parser
                         $box1 = $box;
                         $box2 = $box;
                         $box1['text'] = explode(chr(0xc2) . chr(0xa0), $box['text'])[0];
+                        error_log($box['text']);
                         $box2['text'] = explode(chr(0xc2) . chr(0xa0), $box['text'])[1];
                         $td_groups[1][] = $box1;
                         $td_groups[2][] = $box2;
@@ -849,6 +849,7 @@ class Parser
                 '工作計畫名稱及編號',
                 '機關(構)',
             ])) {
+                unset($row[0]);
                 $project_list = [];
 
                 // 如果第一行後面都空白，第二行第一格是空白，表示被拆成兩行
@@ -858,7 +859,12 @@ class Parser
                 }
 
                 // 處理空格
-                for ($i = 1; $i < count($row); $i ++) {
+                $max_idx = array_keys($row);
+                $max_idx = array_pop($max_idx);
+                for ($i = 1; $i <= $max_idx; $i ++) {
+                    if (!array_key_exists($i, $row)) {
+                        continue;
+                    }
                     // nbsp to space
                     $row[$i] = str_replace(chr(0xc2) . chr(0xa0), ' ', $row[$i]);
                     if (!preg_match('#^[0-9A ]*$#', $row[$i])) {
@@ -877,10 +883,11 @@ class Parser
                         }
                     }
 
-                    $project_list[] = [
+                    $project_list[$i - 1] = [
                         '工作計畫編號' => $row[$i],
                         '工作計畫名稱' => '',
                     ];
+                    unset($row[$i]);
                 }
 
                 // 處理下一行名稱
@@ -889,8 +896,16 @@ class Parser
                 if ($row[0] != '第一、二級用途別科目名稱及編號') {
                     throw new Exception("工作計畫名稱及編號下一行必需要是「第一、二級用途別科目名稱及編號」，結果是 " . $row[0]);
                 }
-                for ($i = 1; $row[$i] ?? false; $i ++) {
+                $max_idx = array_keys($row);
+                $max_idx = array_pop($max_idx);
+                for ($i = 1; $i <= $max_idx; $i ++) {
+                    if (!array_key_exists($i, $row)) {
+                        continue;
+                    }
                     $project_list[$i - 1]['工作計畫名稱'] = self::clean_space($row[$i]);
+                    if (self::clean_space($row[$i]) == '合計') {
+                        $project_list[$i - 1]['工作計畫編號'] = 'total';
+                    }
                 }
                 // 如果後面還有文字，表示字太多要追加
                 while ($type_line['rows'][0][0] == '') {
@@ -910,9 +925,9 @@ class Parser
                 for ($i = 0; $i < count($project_list); $i ++) {
                     $values = [
                         '單位' => $organization,
-                        '工作計畫編號' => $project_list[$i]['工作計畫編號'],
-                        '工作計畫名稱' => $project_list[$i]['工作計畫名稱'],
-                        '第一級用途別科目編號' => '',
+                        '工作計畫編號' => $project_list[$i]['工作計畫編號'] ?? 'total',
+                        '工作計畫名稱' => $project_list[$i]['工作計畫名稱'] ?? '合計',
+                        '第一級用途別科目編號' => 'total',
                         '第一級用途別科目名稱' => '合計',
                         '第二級用途別科目編號' => '',
                         '第二級用途別科目名稱' => '',
@@ -925,6 +940,7 @@ class Parser
 
             // 處理數字
             $row[0] = str_replace(chr(0xa0) . ' ', chr(0xa0), $row[0]);
+            $row[0] = str_replace("\n", "", $row[0]);
             if (preg_match('#^\xa0*(\d+|※)\s*(.*)$#u', $row[0], $matches)) {
                 $no = $matches[1];
                 $name = $matches[2];
@@ -979,9 +995,15 @@ class Parser
                         print_R($no);
                         throw new Exception("沒有 parent_id_no");
                     }
+                    if (self::clean_space($row[$i]) == '-') {
+                        continue;
+                    }
+                    if (self::clean_space($row[$i]) == '') {
+                        continue;
+                    }
                     $values = [
                         '單位' => $organization,
-                        '工作計畫編號' => $project_list[$i - 1]['工作計畫編號'] ?? '',
+                        '工作計畫編號' => $project_list[$i - 1]['工作計畫編號'] ?? 'total',
                         '工作計畫名稱' => $project_list[$i - 1]['工作計畫名稱'] ?? '合計',
                         '第一級用途別科目編號' => $parent_id_no[0],
                         '第一級用途別科目名稱' => $parent_id_no[1],
@@ -1029,13 +1051,15 @@ class Parser
                 '各項費用彙計表',
                 '各機關各項費用彙計表',
             ])) {
-                return self::parse各項費用彙計表($type_line, $callback, $type);
+                self::parse各項費用彙計表($type_line, $callback, $type);
+                continue;
             }
 
             if (in_array($type, [
                 '歲出計畫提要及分支計畫概況表',
             ])) {
-                return self::parse歲出計畫提要及分支計畫概況表($type_line, $callback, $type);
+                self::parse歲出計畫提要及分支計畫概況表($type_line, $callback, $type);
+                continue;
             }
 
             // 如果前面整行只有說明，就刪掉
@@ -1250,6 +1274,9 @@ class Parser
                 echo "current = " . json_encode($row, JSON_UNESCAPED_UNICODE) . "\n";
                 echo json_encode(array_slice($type_line['rows'], 0, 5), JSON_UNESCAPED_UNICODE) . "\n";
                 throw new Exception("沒有符合的行");
+            }
+            if (!is_null($values)) {
+                $callback($type, self::outputData($cols[$type], $values), $type_line['page']);
             }
         }
     }
